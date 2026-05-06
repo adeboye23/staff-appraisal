@@ -1,0 +1,81 @@
+import { query } from "../db.js";
+import { ApiError } from "../utils/ApiError.js";
+const DEFAULT_REVIEW_PERIOD = "2026 Annual Review";
+export async function ensureReviewPeriodsTable() {
+    await query(`
+    CREATE TABLE IF NOT EXISTS review_periods (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(80) NOT NULL UNIQUE,
+      is_active BOOLEAN NOT NULL DEFAULT FALSE,
+      starts_on DATE,
+      ends_on DATE,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+    await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_review_periods_single_active
+    ON review_periods ((is_active))
+    WHERE is_active = TRUE
+  `);
+    const existing = await query("SELECT id, name, is_active, starts_on::text, ends_on::text FROM review_periods ORDER BY id ASC LIMIT 1");
+    if (!existing.rows.length) {
+        await query(`
+        INSERT INTO review_periods (name, is_active)
+        VALUES ($1, TRUE)
+      `, [DEFAULT_REVIEW_PERIOD]);
+    }
+    else {
+        const active = await query("SELECT id FROM review_periods WHERE is_active = TRUE LIMIT 1");
+        if (!active.rows.length) {
+            await query(`
+          UPDATE review_periods
+          SET is_active = CASE WHEN id = $1 THEN TRUE ELSE FALSE END,
+              updated_at = NOW()
+        `, [existing.rows[0].id]);
+        }
+    }
+}
+export async function listReviewPeriods() {
+    const result = await query(`
+      SELECT id, name, is_active, starts_on::text, ends_on::text
+      FROM review_periods
+      ORDER BY is_active DESC, name ASC
+    `);
+    return result.rows;
+}
+export async function getActiveReviewPeriod() {
+    const result = await query(`
+      SELECT id, name, is_active, starts_on::text, ends_on::text
+      FROM review_periods
+      WHERE is_active = TRUE
+      LIMIT 1
+    `);
+    if (!result.rows[0]) {
+        throw new ApiError(500, "No active review period configured");
+    }
+    return result.rows[0];
+}
+export async function createReviewPeriod(input) {
+    if (input.isActive) {
+        await query("UPDATE review_periods SET is_active = FALSE, updated_at = NOW() WHERE is_active = TRUE");
+    }
+    const result = await query(`
+      INSERT INTO review_periods (name, is_active, starts_on, ends_on)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, name, is_active, starts_on::text, ends_on::text
+    `, [input.name, Boolean(input.isActive), input.startsOn ?? null, input.endsOn ?? null]);
+    return result.rows[0];
+}
+export async function setActiveReviewPeriod(periodId) {
+    const exists = await query("SELECT id FROM review_periods WHERE id = $1", [periodId]);
+    if (!exists.rows[0]) {
+        throw new ApiError(404, "Review period not found");
+    }
+    await query(`
+      UPDATE review_periods
+      SET is_active = CASE WHEN id = $1 THEN TRUE ELSE FALSE END,
+          updated_at = NOW()
+    `, [periodId]);
+    return getActiveReviewPeriod();
+}
