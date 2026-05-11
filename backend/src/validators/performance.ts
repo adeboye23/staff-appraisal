@@ -7,19 +7,19 @@ export const performanceSchema = z.object({
 
 export const selfAppraisalSchema = z.object({
   kpiId: z.number().int().positive(),
-  selfScore: z.number().int().min(1).max(5),
+  selfScore: z.number().min(1).max(5),
   comment: z.string().min(2)
 });
 
 export const managerScoreSchema = z.object({
   kpiId: z.number().int().positive(),
-  managerScore: z.number().int().min(1).max(5),
+  managerScore: z.number().min(1).max(5),
   comment: z.string().min(2)
 });
 
 export const finalScoreSchema = z.object({
   kpiId: z.number().int().positive(),
-  finalScore: z.number().int().min(1).max(5),
+  finalScore: z.number().min(1).max(5),
   agree: z.boolean()
 });
 
