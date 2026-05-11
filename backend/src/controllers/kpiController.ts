@@ -7,6 +7,7 @@ import { ApiError } from "../utils/ApiError.js";
 import {
   ensureAdditionalKpiCapacity,
   ensureKpiEditable,
+  getPerformanceByKpi,
   getOrCreateActiveAppraisal,
   getOrCreateAppraisal
 } from "../services/appraisalService.js";
@@ -119,6 +120,18 @@ export const approveKpi = asyncHandler(async (req: AuthedRequest, res: Response)
   const kpiId = Number(req.params.id);
   const data = approveKpiSchema.parse(req.body);
   await ensureKpiEditable(kpiId);
+
+  if (data.status === "approved") {
+    const performance = await getPerformanceByKpi(kpiId);
+
+    if (!performance?.self_score) {
+      throw new ApiError(400, "Employee self-score must be set before approval.");
+    }
+
+    if (!performance.manager_score) {
+      throw new ApiError(400, "Manager score must be set before approval.");
+    }
+  }
 
   if (data.status === "rejected" && !data.comment?.trim()) {
     throw new ApiError(400, "Manager feedback is required when returning a KPI for adjustment.");

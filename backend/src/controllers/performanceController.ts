@@ -129,19 +129,25 @@ export const selfAppraisal = asyncHandler(async (req: AuthedRequest, res: Respon
   const kpi = await ensureKpiExists(data.kpiId);
   await ensureAppraisalMutable(kpi.appraisal_id);
   const performance = await getPerformanceByKpi(data.kpiId);
-  if (!performance) {
-    throw new ApiError(400, "Performance actual value must be recorded first");
-  }
 
-  const result = await query(
-    `
-      UPDATE performance
-      SET self_score = $1, updated_at = NOW()
-      WHERE kpi_id = $2
-      RETURNING *
-    `,
-    [data.selfScore, data.kpiId]
-  );
+  const result = performance
+    ? await query(
+        `
+          UPDATE performance
+          SET self_score = $1, updated_at = NOW()
+          WHERE kpi_id = $2
+          RETURNING *
+        `,
+        [data.selfScore, data.kpiId]
+      )
+    : await query(
+        `
+          INSERT INTO performance (kpi_id, actual, self_score)
+          VALUES ($1, 0, $2)
+          RETURNING *
+        `,
+        [data.kpiId, data.selfScore]
+      );
 
   await query(
     "INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'employee')",
