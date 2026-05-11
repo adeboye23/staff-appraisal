@@ -24,6 +24,7 @@ export type Kpi = {
   appraisalId?: number;
   appraisalPeriod?: string;
   appraisalStatus?: "draft" | "in_review" | "completed";
+  appraisalCreatedAt?: string;
   employeeSigned?: boolean;
   managerSigned?: boolean;
   employeeSignedAt?: string | null;
@@ -85,6 +86,7 @@ export type TimelineItem = {
 
 export type CommentHistoryItem = {
   id: number;
+  kpi_id: number;
   comment: string;
   type: "employee" | "manager";
   created_at: string;

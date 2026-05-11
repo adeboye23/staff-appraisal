@@ -13,7 +13,24 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 export const app = express();
 
-app.use(cors({ origin: config.clientUrl, credentials: true }));
+app.use(
+  cors({
+    credentials: true,
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (config.clientUrls.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    }
+  })
+);
 app.use(express.json());
 app.use(apiLimiter);
 

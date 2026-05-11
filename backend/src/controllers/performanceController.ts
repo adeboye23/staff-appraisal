@@ -13,9 +13,9 @@ import {
   ensureKpiExists,
   getPerformanceByKpi,
   requirePerformanceForFinal,
-  ensureAppraisalMutable
+  ensureAppraisalMutable,
+  requireFinalReviewWindow
 } from "../services/appraisalService.js";
-import { calculateWeightedScore } from "../utils/score.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 
@@ -23,7 +23,6 @@ export const createPerformance = asyncHandler(async (req: AuthedRequest, res: Re
   const data = performanceSchema.parse(req.body);
   const kpi = await ensureKpiExists(data.kpiId);
   await ensureAppraisalMutable(kpi.appraisal_id);
-  const score = calculateWeightedScore(data.actual, Number(kpi.target), Number(kpi.weight));
   const existing = await getPerformanceByKpi(data.kpiId);
 
   const result = existing
@@ -32,17 +31,17 @@ export const createPerformance = asyncHandler(async (req: AuthedRequest, res: Re
           UPDATE performance
           SET actual = $1, updated_at = NOW()
           WHERE kpi_id = $2
-          RETURNING *, $3::numeric AS auto_score
+          RETURNING *
         `,
-        [data.actual, data.kpiId, score]
+        [data.actual, data.kpiId]
       )
     : await query(
         `
           INSERT INTO performance (kpi_id, actual)
           VALUES ($1, $2)
-          RETURNING *, $3::numeric AS auto_score
+          RETURNING *
         `,
-        [data.kpiId, data.actual, score]
+        [data.kpiId, data.actual]
       );
 
   await logAudit({
@@ -106,6 +105,7 @@ export const getComments = asyncHandler(async (req: AuthedRequest, res: Response
     `
       SELECT
         c.id,
+        c.kpi_id,
         c.comment,
         c.type,
         c.created_at,
@@ -195,6 +195,7 @@ export const finalScore = asyncHandler(async (req: AuthedRequest, res: Response)
   const data = finalScoreSchema.parse(req.body);
   const kpi = await ensureKpiExists(data.kpiId);
   await ensureAppraisalMutable(kpi.appraisal_id);
+  await requireFinalReviewWindow(kpi.appraisal_id);
   if (!data.agree) {
     throw new ApiError(400, "Agreement checkbox must be confirmed");
   }

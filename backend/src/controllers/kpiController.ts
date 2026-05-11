@@ -5,7 +5,6 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { createKpiSchema, updateKpiSchema, approveKpiSchema } from "../validators/kpi.js";
 import { ApiError } from "../utils/ApiError.js";
 import {
-  assertKpiWeightTotal,
   ensureAdditionalKpiCapacity,
   ensureKpiEditable,
   getOrCreateActiveAppraisal,
@@ -54,6 +53,7 @@ export const getUserKpis = asyncHandler(async (req: AuthedRequest, res: Response
         k.*,
         a.period AS appraisal_period,
         a.status AS appraisal_status,
+        a.created_at AS appraisal_created_at,
         a.employee_signed,
         a.manager_signed,
         a.employee_signed_at,
@@ -73,11 +73,7 @@ export const getUserKpis = asyncHandler(async (req: AuthedRequest, res: Response
 export const updateKpi = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const kpiId = Number(req.params.id);
   const data = updateKpiSchema.parse(req.body);
-  const current = await ensureKpiEditable(kpiId);
-
-  if (data.weight !== undefined) {
-    await assertKpiWeightTotal(current.appraisal_id, current.user_id, data.weight, current.id);
-  }
+  await ensureKpiEditable(kpiId);
 
   const result = await query(
     `
@@ -122,17 +118,7 @@ export const deleteKpi = asyncHandler(async (req: AuthedRequest, res: Response) 
 export const approveKpi = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const kpiId = Number(req.params.id);
   const data = approveKpiSchema.parse(req.body);
-  const current = await ensureKpiEditable(kpiId);
-
-  if (data.status === "approved") {
-    if (Number(current.weight) <= 0) {
-      throw new ApiError(400, "Manager must assign a KPI weight before approval.");
-    }
-    if (Number(current.target) <= 0) {
-      throw new ApiError(400, "Manager must assign a KPI target score before approval.");
-    }
-    await assertKpiWeightTotal(current.appraisal_id, current.user_id, Number(current.weight), current.id);
-  }
+  await ensureKpiEditable(kpiId);
 
   if (data.status === "rejected" && !data.comment?.trim()) {
     throw new ApiError(400, "Manager feedback is required when returning a KPI for adjustment.");

@@ -27,10 +27,35 @@ function normalizeDatabaseUrl(value: string) {
   }
 }
 
+function parseClientUrls(value: string | undefined) {
+  const rawValue = value?.trim();
+
+  if (!rawValue) {
+    return ["http://localhost:5173"];
+  }
+
+  return rawValue
+    .split(/[\r\n,]+/)
+    .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean)
+    .filter((entry, index, entries) => entries.indexOf(entry) === index)
+    .filter((entry) => {
+      try {
+        const url = new URL(entry);
+        return /^https?:$/.test(url.protocol);
+      } catch {
+        return false;
+      }
+    });
+}
+
+const clientUrls = parseClientUrls(process.env.CLIENT_URL);
+
 export const config = {
   port: Number(process.env.PORT || 4000),
   databaseUrl: normalizeDatabaseUrl(process.env.DATABASE_URL || ""),
   jwtSecret: process.env.JWT_SECRET || "change_me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173"
+  clientUrl: clientUrls[0] || "http://localhost:5173",
+  clientUrls
 };

@@ -66,6 +66,7 @@ export function getUserKpis(userId: number, token: string) {
       appraisal_id?: number;
       appraisal_period?: string;
       appraisal_status?: "draft" | "in_review" | "completed";
+      appraisal_created_at?: string;
       employee_signed?: boolean;
       manager_signed?: boolean;
       employee_signed_at?: string | null;
