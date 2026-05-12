@@ -2019,7 +2019,7 @@ function KpiManagement({
                       />
                     </label>
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:col-span-2">
-                      Manager scores support decimals, so values like 1.1, 2.4, or 4.7 are accepted.
+                      Add a manager score before approving this KPI.
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
@@ -2067,7 +2067,7 @@ function KpiManagement({
                       />
                     </label>
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium text-slate-700">Description</span>
+                      <span className="mb-2 block font-medium text-slate-700">Goals</span>
                       <textarea
                         value={item.description ?? ""}
                         onChange={(event) => onRowChange(item.id, "description", event.target.value)}
@@ -2106,7 +2106,7 @@ function KpiManagement({
                       </datalist>
                     </label>
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      Self-scores support decimals, so values like 1.1, 2.4, or 4.7 are accepted before submission.
+                      Add your self score and actual achievement before sending this KPI to the manager.
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
@@ -2173,7 +2173,7 @@ function KpiManagement({
                   />
                 </label>
                 <label className="text-sm">
-                  <span className="mb-2 block font-medium text-slate-700">Description</span>
+                  <span className="mb-2 block font-medium text-slate-700">Goals</span>
                   <textarea
                     value={newKpiForm.description}
                     onChange={(event) => onNewKpiChange({ ...newKpiForm, description: event.target.value })}
@@ -2245,18 +2245,11 @@ function AppraisalFlow({
   const approvedKpis = kpis.filter((item) => item.status === "Approved");
   const [finalScoreInputs, setFinalScoreInputs] = useState<Record<number, string>>({});
   const latestEmployeeComments = new Map<number, string>();
-  const latestManagerComments = new Map<number, string>();
-  const commentHistoryByKpi = new Map<number, CommentHistoryItem[]>();
 
   commentHistory.forEach((item) => {
     if (item.type === "employee" && !latestEmployeeComments.has(item.kpi_id)) {
       latestEmployeeComments.set(item.kpi_id, item.comment);
     }
-    if (item.type === "manager" && !latestManagerComments.has(item.kpi_id)) {
-      latestManagerComments.set(item.kpi_id, item.comment);
-    }
-    const existing = commentHistoryByKpi.get(item.kpi_id) ?? [];
-    commentHistoryByKpi.set(item.kpi_id, [...existing, item]);
   });
 
   useEffect(() => {
@@ -2281,14 +2274,15 @@ function AppraisalFlow({
     const reviewDate = buildReviewDate(item.appraisalCreatedAt);
     return reviewDate ? new Date() < reviewDate : true;
   }).length;
-  const approvedWithManagerFeedback = approvedKpis.filter((item) => latestManagerComments.has(item.id)).length;
+  const scoredByManager = approvedKpis.filter((item) => item.managerScore !== undefined).length;
+  const reviewPeriodsCovered = new Set(approvedKpis.map((item) => item.appraisalPeriod).filter(Boolean)).size;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <MetricCard title="Approved KPIs" value={String(approvedKpis.length)} note={`Manager-approved KPIs for ${profileName}`} tone="slate" />
         <MetricCard title="Self Scores" value={String(approvedKpis.filter((item) => item.selfScore !== undefined).length)} note="Approved KPIs that already carry the employee self-score" tone="amber" />
-        <MetricCard title="Manager Feedback" value={String(approvedWithManagerFeedback)} note="Approved KPIs with at least one review comment saved" tone="indigo" />
+        <MetricCard title="Manager Scores" value={String(scoredByManager)} note="Approved KPIs that already carry the manager score" tone="indigo" />
         <MetricCard title="Final Reviews Locked" value={String(lockedFinalReviews)} note="Approved KPIs still waiting for the six-month final review window" tone="green" />
       </div>
 
@@ -2307,15 +2301,12 @@ function AppraisalFlow({
       <section className="rounded-[32px] bg-white p-6 shadow-sm ring-1 ring-black/5">
         <div>
           <h3 className="text-xl font-semibold text-slate-900">My appraisals</h3>
-          <p className="text-sm text-slate-500">
-            Every approved KPI appears here in one consistent layout, including both scoring stages and the six-month final review lock.
-          </p>
+          <p className="text-sm text-slate-500">Approved KPIs appear here with the goal, achievement update, scores, and final review status.</p>
         </div>
 
         <div className="mt-6 space-y-4">
           {approvedKpis.length ? (
             approvedKpis.map((item) => {
-              const kpiComments = commentHistoryByKpi.get(item.id) ?? [];
               const itemReviewDate = buildReviewDate(item.appraisalCreatedAt);
               const itemFinalReviewOpen = itemReviewDate ? new Date() >= itemReviewDate : false;
               const finalScoreInput = finalScoreInputs[item.id] ?? "";
@@ -2332,7 +2323,7 @@ function AppraisalFlow({
                         </span>
                       </div>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
-                        {item.description || "No description has been recorded for this KPI yet."}
+                        {item.description || "No goal has been recorded for this KPI yet."}
                       </p>
                     </div>
                     <div className="min-w-[220px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -2347,45 +2338,20 @@ function AppraisalFlow({
                   <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Employee actual achievement
+                        Goal
                       </p>
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                        {latestEmployeeComments.get(item.id) || "The employee has not submitted an actual achievement update yet."}
+                        {item.description || "No goal has been recorded for this KPI yet."}
                       </p>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Manager review comment
+                        Employee actual achievement
                       </p>
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                        {latestManagerComments.get(item.id) || "No manager review comment has been recorded for this KPI yet."}
+                        {latestEmployeeComments.get(item.id) || "The employee has not submitted an actual achievement update yet."}
                       </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Comment history
-                      </p>
-                      {kpiComments.length ? (
-                        <div className="mt-4 space-y-3">
-                          {kpiComments.slice(0, 4).map((entry) => (
-                            <div key={entry.id} className="rounded-2xl bg-slate-50 px-4 py-3">
-                              <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.14em] text-slate-400">
-                                <span>{entry.type === "manager" ? "Manager" : "Employee"}</span>
-                                <span>{new Date(entry.created_at).toLocaleDateString()}</span>
-                              </div>
-                              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                                {entry.comment}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="mt-3 text-sm text-slate-500">
-                          No comment history has been saved for this KPI yet.
-                        </p>
-                      )}
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
