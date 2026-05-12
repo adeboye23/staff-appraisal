@@ -7,6 +7,7 @@ import { ApiError } from "../utils/ApiError.js";
 import {
   ensureAdditionalKpiCapacity,
   ensureKpiEditable,
+  getPerformanceByKpi,
   getOrCreateActiveAppraisal,
   getOrCreateAppraisal
 } from "../services/appraisalService.js";
@@ -118,18 +119,17 @@ export const deleteKpi = asyncHandler(async (req: AuthedRequest, res: Response) 
 export const approveKpi = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const kpiId = Number(req.params.id);
   const data = approveKpiSchema.parse(req.body);
-  const editableKpi = await ensureKpiEditable(kpiId);
+  await ensureKpiEditable(kpiId);
 
   if (data.status === "approved") {
-    const weight = Number(editableKpi.weight);
-    const target = Number(editableKpi.target);
+    const performance = await getPerformanceByKpi(kpiId);
 
-    if (!Number.isFinite(weight) || weight <= 0) {
-      throw new ApiError(400, "KPI weight must be set before approval.");
+    if (!performance?.self_score) {
+      throw new ApiError(400, "Employee self-score must be set before approval.");
     }
 
-    if (!Number.isFinite(target) || target <= 0) {
-      throw new ApiError(400, "Manager target score must be set before approval.");
+    if (!performance.manager_score) {
+      throw new ApiError(400, "Manager score must be set before approval.");
     }
   }
 

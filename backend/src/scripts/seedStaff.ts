@@ -11,7 +11,16 @@ type SeedUser = {
   previousEmail?: string;
 };
 
-const departments = ["Human Resources", "Editorial", "Digital", "Operations"];
+const departments = [
+  "Human Resources",
+  "Digital",
+  "Programmes",
+  "Entertainment",
+  "Sports",
+  "Business",
+  "Technical",
+  "Operations & Support Services"
+];
 
 const seedUsers: SeedUser[] = [
   {
@@ -37,7 +46,7 @@ const seedUsers: SeedUser[] = [
     name: "Donald NC",
     email: "donald@newscentral.com",
     role: "manager",
-    department: "Editorial",
+    department: "Technical",
     previousEmail: "manager@newscentral.com"
   },
   {
@@ -47,16 +56,40 @@ const seedUsers: SeedUser[] = [
     department: "Digital"
   },
   {
+    name: "Tolu NC",
+    email: "tolu@newscentral.com",
+    role: "manager",
+    department: "Entertainment"
+  },
+  {
+    name: "Bamidele NC",
+    email: "bamidele@newscentral.com",
+    role: "manager",
+    department: "Programmes"
+  },
+  {
+    name: "Chinedu NC",
+    email: "chinedu@newscentral.com",
+    role: "manager",
+    department: "Sports"
+  },
+  {
+    name: "Kemi NC",
+    email: "kemi@newscentral.com",
+    role: "manager",
+    department: "Business"
+  },
+  {
     name: "Omolara NC",
     email: "omolara@newscentral.com",
     role: "manager",
-    department: "Operations"
+    department: "Operations & Support Services"
   },
   {
     name: "Emmanuel NC",
     email: "emmanuel@newscentral.com",
     role: "employee",
-    department: "Editorial",
+    department: "Technical",
     managerEmail: "donald@newscentral.com",
     previousEmail: "tolu@newscentral.com"
   },
@@ -72,7 +105,7 @@ const seedUsers: SeedUser[] = [
     name: "Tomisin NC",
     email: "tomisin@newscentral.com",
     role: "employee",
-    department: "Operations",
+    department: "Operations & Support Services",
     managerEmail: "omolara@newscentral.com"
   }
 ];
@@ -132,62 +165,10 @@ async function ensureUsers() {
   }
 }
 
-async function ensureTomisinAppraisal() {
-  await query(
-    `
-      INSERT INTO appraisals (user_id, period, status, employee_signed, manager_signed)
-      VALUES (
-        (SELECT id FROM users WHERE email = 'tomisin@newscentral.com'),
-        '2026 Annual Review',
-        'draft',
-        FALSE,
-        FALSE
-      )
-      ON CONFLICT (user_id, period) DO NOTHING
-    `
-  );
-
-  await query(
-    `
-      INSERT INTO kpis (appraisal_id, user_id, title, description, weight, target, status)
-      VALUES
-      (
-        (SELECT id FROM appraisals WHERE user_id = (SELECT id FROM users WHERE email = 'tomisin@newscentral.com') AND period = '2026 Annual Review'),
-        (SELECT id FROM users WHERE email = 'tomisin@newscentral.com'),
-        'Broadcast turnaround',
-        'Deliver assigned production tasks within agreed turnaround time.',
-        40,
-        12,
-        'submitted'
-      ),
-      (
-        (SELECT id FROM appraisals WHERE user_id = (SELECT id FROM users WHERE email = 'tomisin@newscentral.com') AND period = '2026 Annual Review'),
-        (SELECT id FROM users WHERE email = 'tomisin@newscentral.com'),
-        'Audience retention',
-        'Improve retention across assigned content segments.',
-        35,
-        9,
-        'draft'
-      ),
-      (
-        (SELECT id FROM appraisals WHERE user_id = (SELECT id FROM users WHERE email = 'tomisin@newscentral.com') AND period = '2026 Annual Review'),
-        (SELECT id FROM users WHERE email = 'tomisin@newscentral.com'),
-        'Production accuracy',
-        'Reduce handoff and publishing errors.',
-        25,
-        98,
-        'approved'
-      )
-      ON CONFLICT DO NOTHING
-    `
-  );
-}
-
 async function main() {
   try {
     await ensureDepartments();
     await ensureUsers();
-    await ensureTomisinAppraisal();
     console.log("News Central staff seed completed.");
   } finally {
     await pool.end();

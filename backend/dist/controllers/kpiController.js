@@ -2,7 +2,7 @@ import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { createKpiSchema, updateKpiSchema, approveKpiSchema } from "../validators/kpi.js";
 import { ApiError } from "../utils/ApiError.js";
-import { ensureAdditionalKpiCapacity, ensureKpiEditable, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
+import { ensureAdditionalKpiCapacity, ensureKpiEditable, getPerformanceByKpi, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
 import { logAudit } from "../utils/audit.js";
 export const createKpi = asyncHandler(async (req, res) => {
     const data = createKpiSchema.parse(req.body);
@@ -89,15 +89,14 @@ export const deleteKpi = asyncHandler(async (req, res) => {
 export const approveKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const data = approveKpiSchema.parse(req.body);
-    const editableKpi = await ensureKpiEditable(kpiId);
+    await ensureKpiEditable(kpiId);
     if (data.status === "approved") {
-        const weight = Number(editableKpi.weight);
-        const target = Number(editableKpi.target);
-        if (!Number.isFinite(weight) || weight <= 0) {
-            throw new ApiError(400, "KPI weight must be set before approval.");
+        const performance = await getPerformanceByKpi(kpiId);
+        if (!performance?.self_score) {
+            throw new ApiError(400, "Employee self-score must be set before approval.");
         }
-        if (!Number.isFinite(target) || target <= 0) {
-            throw new ApiError(400, "Manager target score must be set before approval.");
+        if (!performance.manager_score) {
+            throw new ApiError(400, "Manager score must be set before approval.");
         }
     }
     if (data.status === "rejected" && !data.comment?.trim()) {
