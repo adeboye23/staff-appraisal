@@ -66,10 +66,8 @@ export async function getKpiWeightTotal(appraisalId, userId, excludeKpiId) {
     return Number(result.rows[0]?.total || 0);
 }
 export async function ensureAdditionalKpiCapacity(appraisalId, userId) {
-    const total = await getKpiWeightTotal(appraisalId, userId);
-    if (Number(total.toFixed(2)) >= 100) {
-        throw new ApiError(400, "The total KPI weight is already 100%. No more KPIs can be added.");
-    }
+    void appraisalId;
+    void userId;
 }
 export async function requireExactKpiWeightTotal(appraisalId, userId) {
     const result = await query(`
@@ -95,4 +93,20 @@ export async function requirePerformanceForFinal(kpiId) {
         throw new ApiError(400, "Final score requires both self_score and manager_score");
     }
     return performance;
+}
+export async function requireFinalReviewWindow(appraisalId) {
+    const appraisal = await query("SELECT * FROM appraisals WHERE id = $1", [appraisalId]);
+    const record = appraisal.rows[0];
+    if (!record) {
+        throw new ApiError(404, "Appraisal not found");
+    }
+    const reviewDate = new Date(record.created_at);
+    reviewDate.setMonth(reviewDate.getMonth() + 6);
+    if (Number.isNaN(reviewDate.getTime())) {
+        throw new ApiError(500, "Unable to determine the final review date");
+    }
+    if (new Date() < reviewDate) {
+        throw new ApiError(400, `Final score review opens on ${reviewDate.toISOString().slice(0, 10)}`);
+    }
+    return record;
 }

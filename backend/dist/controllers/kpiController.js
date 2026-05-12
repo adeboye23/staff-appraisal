@@ -2,7 +2,7 @@ import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { createKpiSchema, updateKpiSchema, approveKpiSchema } from "../validators/kpi.js";
 import { ApiError } from "../utils/ApiError.js";
-import { assertKpiWeightTotal, ensureAdditionalKpiCapacity, ensureKpiEditable, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
+import { ensureAdditionalKpiCapacity, ensureKpiEditable, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
 import { logAudit } from "../utils/audit.js";
 export const createKpi = asyncHandler(async (req, res) => {
     const data = createKpiSchema.parse(req.body);
@@ -35,6 +35,7 @@ export const getUserKpis = asyncHandler(async (req, res) => {
         k.*,
         a.period AS appraisal_period,
         a.status AS appraisal_status,
+        a.created_at AS appraisal_created_at,
         a.employee_signed,
         a.manager_signed,
         a.employee_signed_at,
@@ -50,10 +51,7 @@ export const getUserKpis = asyncHandler(async (req, res) => {
 export const updateKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const data = updateKpiSchema.parse(req.body);
-    const current = await ensureKpiEditable(kpiId);
-    if (data.weight !== undefined) {
-        await assertKpiWeightTotal(current.appraisal_id, current.user_id, data.weight, current.id);
-    }
+    await ensureKpiEditable(kpiId);
     const result = await query(`
       UPDATE kpis
       SET title = COALESCE($1, title),
@@ -91,15 +89,16 @@ export const deleteKpi = asyncHandler(async (req, res) => {
 export const approveKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const data = approveKpiSchema.parse(req.body);
-    const current = await ensureKpiEditable(kpiId);
+    const editableKpi = await ensureKpiEditable(kpiId);
     if (data.status === "approved") {
-        if (Number(current.weight) <= 0) {
-            throw new ApiError(400, "Manager must assign a KPI weight before approval.");
+        const weight = Number(editableKpi.weight);
+        const target = Number(editableKpi.target);
+        if (!Number.isFinite(weight) || weight <= 0) {
+            throw new ApiError(400, "KPI weight must be set before approval.");
         }
-        if (Number(current.target) <= 0) {
-            throw new ApiError(400, "Manager must assign a KPI target score before approval.");
+        if (!Number.isFinite(target) || target <= 0) {
+            throw new ApiError(400, "Manager target score must be set before approval.");
         }
-        await assertKpiWeightTotal(current.appraisal_id, current.user_id, Number(current.weight), current.id);
     }
     if (data.status === "rejected" && !data.comment?.trim()) {
         throw new ApiError(400, "Manager feedback is required when returning a KPI for adjustment.");

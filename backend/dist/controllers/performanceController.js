@@ -1,28 +1,26 @@
 import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { finalScoreSchema, managerScoreSchema, performanceSchema, selfAppraisalSchema, signOffSchema } from "../validators/performance.js";
-import { ensureKpiExists, getPerformanceByKpi, requirePerformanceForFinal, ensureAppraisalMutable } from "../services/appraisalService.js";
-import { calculateWeightedScore } from "../utils/score.js";
+import { ensureKpiExists, getPerformanceByKpi, requirePerformanceForFinal, ensureAppraisalMutable, requireFinalReviewWindow } from "../services/appraisalService.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 export const createPerformance = asyncHandler(async (req, res) => {
     const data = performanceSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
     await ensureAppraisalMutable(kpi.appraisal_id);
-    const score = calculateWeightedScore(data.actual, Number(kpi.target), Number(kpi.weight));
     const existing = await getPerformanceByKpi(data.kpiId);
     const result = existing
         ? await query(`
           UPDATE performance
           SET actual = $1, updated_at = NOW()
           WHERE kpi_id = $2
-          RETURNING *, $3::numeric AS auto_score
-        `, [data.actual, data.kpiId, score])
+          RETURNING *
+        `, [data.actual, data.kpiId])
         : await query(`
           INSERT INTO performance (kpi_id, actual)
           VALUES ($1, $2)
-          RETURNING *, $3::numeric AS auto_score
-        `, [data.kpiId, data.actual, score]);
+          RETURNING *
+        `, [data.kpiId, data.actual]);
     await logAudit({
         actorUserId: req.user?.id ?? null,
         action: "performance.upsert",
@@ -73,6 +71,7 @@ export const getComments = asyncHandler(async (req, res) => {
     const result = await query(`
       SELECT
         c.id,
+        c.kpi_id,
         c.comment,
         c.type,
         c.created_at,
@@ -92,15 +91,18 @@ export const selfAppraisal = asyncHandler(async (req, res) => {
     const kpi = await ensureKpiExists(data.kpiId);
     await ensureAppraisalMutable(kpi.appraisal_id);
     const performance = await getPerformanceByKpi(data.kpiId);
-    if (!performance) {
-        throw new ApiError(400, "Performance actual value must be recorded first");
-    }
-    const result = await query(`
-      UPDATE performance
-      SET self_score = $1, updated_at = NOW()
-      WHERE kpi_id = $2
-      RETURNING *
-    `, [data.selfScore, data.kpiId]);
+    const result = performance
+        ? await query(`
+          UPDATE performance
+          SET self_score = $1, updated_at = NOW()
+          WHERE kpi_id = $2
+          RETURNING *
+        `, [data.selfScore, data.kpiId])
+        : await query(`
+          INSERT INTO performance (kpi_id, actual, self_score)
+          VALUES ($1, 0, $2)
+          RETURNING *
+        `, [data.kpiId, data.selfScore]);
     await query("INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'employee')", [req.user?.id ?? kpi.user_id, data.kpiId, data.comment]);
     await logAudit({
         actorUserId: req.user?.id ?? null,
@@ -140,6 +142,7 @@ export const finalScore = asyncHandler(async (req, res) => {
     const data = finalScoreSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
     await ensureAppraisalMutable(kpi.appraisal_id);
+    await requireFinalReviewWindow(kpi.appraisal_id);
     if (!data.agree) {
         throw new ApiError(400, "Agreement checkbox must be confirmed");
     }
