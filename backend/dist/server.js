@@ -1,5 +1,6 @@
 import { app } from "./app.js";
 import { config } from "./config.js";
+import { ensureAppraisalWorkflowColumns } from "./services/appraisalService.js";
 import { ensureReviewPeriodsTable } from "./services/reviewPeriodService.js";
 async function wait(ms) {
     await new Promise((resolve) => setTimeout(resolve, ms));
@@ -9,6 +10,7 @@ async function initializeDatabase() {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
         try {
             await ensureReviewPeriodsTable();
+            await ensureAppraisalWorkflowColumns();
             return;
         }
         catch (error) {

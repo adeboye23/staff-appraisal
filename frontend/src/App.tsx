@@ -55,6 +55,7 @@ import {
   submitFinalScore,
   submitManagerScore,
   submitSelfAppraisal,
+  unlockEvaluation as unlockEvaluationRequest,
   updateKpi as updateKpiRequest,
   updateStaff
 } from "./api";
@@ -124,7 +125,7 @@ type KpiFeedback = {
   tone: "success" | "error";
   message: string;
 };
-type AppraisalActionKind = "finalScore";
+type AppraisalActionKind = "selfScore" | "managerScore" | "finalScore" | "unlock";
 type AppraisalActionState = { kind: AppraisalActionKind | null; kpiId?: number };
 type AppraisalFeedback = { tone: "success" | "error"; message: string } | null;
 
@@ -146,6 +147,8 @@ function mergeKpiData(
     appraisal_period?: string;
     appraisal_status?: "draft" | "in_review" | "completed";
     appraisal_created_at?: string;
+    appraisal_evaluation_unlocked_by_hr?: boolean;
+    appraisal_evaluation_unlocked_at?: string | null;
     employee_signed?: boolean;
     manager_signed?: boolean;
     employee_signed_at?: string | null;
@@ -168,6 +171,8 @@ function mergeKpiData(
       appraisalPeriod: item.appraisal_period,
       appraisalStatus: item.appraisal_status,
       appraisalCreatedAt: item.appraisal_created_at,
+      appraisalEvaluationUnlockedByHr: item.appraisal_evaluation_unlocked_by_hr,
+      appraisalEvaluationUnlockedAt: item.appraisal_evaluation_unlocked_at ?? null,
       employeeSigned: item.employee_signed,
       managerSigned: item.manager_signed,
       employeeSignedAt: item.employee_signed_at ?? null,
@@ -587,31 +592,13 @@ function App() {
     }
   };
 
-  const handleSaveKpi = async (kpi: Kpi, status?: "draft" | "submitted", achievementNote?: string) => {
+  const handleSaveKpi = async (kpi: Kpi, status?: "draft" | "submitted") => {
     if (!token) return;
     beginKpiAction(status === "submitted" ? "submit" : "save", kpi.id);
 
     try {
       if (!kpi.title.trim()) {
         throw new Error("KPI title is required before saving.");
-      }
-
-      if (status === "submitted") {
-        const normalizedAchievementNote = achievementNote?.trim();
-
-        if (!kpi.selfScore) {
-          throw new Error("Set the staff score before sending this KPI to the manager.");
-        }
-
-        if (!normalizedAchievementNote) {
-          throw new Error("Add the actual achievement before sending this KPI to the manager.");
-        }
-
-        await submitSelfAppraisal(token, {
-          kpiId: kpi.id,
-          selfScore: Number(kpi.selfScore),
-          comment: normalizedAchievementNote
-        });
       }
 
       await updateKpiRequest(token, kpi.id, {
@@ -672,22 +659,10 @@ function App() {
         throw new Error("Add manager feedback before sending a KPI back for adjustment.");
       }
 
-      if (status === "approved" && !kpi.managerScore) {
-        throw new Error("Set the manager score before approving this KPI.");
-      }
-
       await updateKpiRequest(token, kpi.id, {
         title: kpi.title,
         description: kpi.description
       });
-
-      if (status === "approved") {
-        await submitManagerScore(token, {
-          kpiId: kpi.id,
-          managerScore: Number(kpi.managerScore),
-          comment: comment?.trim() || kpi.description || "Manager expectations recorded"
-        });
-      }
 
       await approveKpiRequest(token, kpi.id, {
         status,
@@ -731,6 +706,78 @@ function App() {
       setAppraisalFeedback({
         tone: "error",
         message: error instanceof Error ? error.message : "Unable to record the final score"
+      });
+    } finally {
+      finishAppraisalAction();
+    }
+  };
+
+  const handleSubmitSelfScore = async (kpiId: number, selfScore: number) => {
+    if (!token) return;
+    beginAppraisalAction("selfScore", kpiId);
+
+    try {
+      await submitSelfAppraisal(token, { kpiId, selfScore, comment: undefined });
+      await refreshProfileData();
+      setAppraisalFeedback({ tone: "success", message: "Employee score saved." });
+    } catch (error) {
+      setAppraisalFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to save the employee score"
+      });
+    } finally {
+      finishAppraisalAction();
+    }
+  };
+
+  const handleSubmitAchievement = async (kpiId: number, selfScore: number, achievement: string) => {
+    if (!token) return;
+    beginAppraisalAction("selfScore", kpiId);
+
+    try {
+      await submitSelfAppraisal(token, { kpiId, selfScore, comment: achievement });
+      await refreshProfileData();
+      setAppraisalFeedback({ tone: "success", message: "Actual achievement saved." });
+    } catch (error) {
+      setAppraisalFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to save the actual achievement"
+      });
+    } finally {
+      finishAppraisalAction();
+    }
+  };
+
+  const handleSubmitManagerScore = async (kpiId: number, managerScore: number) => {
+    if (!token) return;
+    beginAppraisalAction("managerScore", kpiId);
+
+    try {
+      await submitManagerScore(token, { kpiId, managerScore, comment: undefined });
+      await refreshProfileData();
+      setAppraisalFeedback({ tone: "success", message: "Manager score saved." });
+    } catch (error) {
+      setAppraisalFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to save the manager score"
+      });
+    } finally {
+      finishAppraisalAction();
+    }
+  };
+
+  const handleUnlockEvaluation = async (appraisalId: number) => {
+    if (!token) return;
+    beginAppraisalAction("unlock", appraisalId);
+
+    try {
+      await unlockEvaluationRequest(token, appraisalId);
+      await refreshProfileData();
+      setAppraisalFeedback({ tone: "success", message: "Three-month evaluation opened by HR." });
+    } catch (error) {
+      setAppraisalFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to open the evaluation stage"
       });
     } finally {
       finishAppraisalAction();
@@ -925,7 +972,11 @@ function App() {
                   commentHistory={commentHistory}
                   feedback={appraisalFeedback}
                   actionState={appraisalActionState}
+                  onSubmitSelfScore={handleSubmitSelfScore}
+                  onSubmitAchievement={handleSubmitAchievement}
+                  onSubmitManagerScore={handleSubmitManagerScore}
                   onSubmitFinalScore={handleSubmitFinalScore}
+                  onUnlockEvaluation={handleUnlockEvaluation}
                 />
               )}
               {activeView === "reviews" && (
@@ -1857,14 +1908,13 @@ function KpiManagement({
   newKpiForm: { title: string; description: string; weight: string; target: string };
   onNewKpiChange: (value: { title: string; description: string; weight: string; target: string }) => void;
   onCreateKpi: () => Promise<void>;
-  onSaveKpi: (kpi: Kpi, status?: "draft" | "submitted", achievementNote?: string) => Promise<void>;
+  onSaveKpi: (kpi: Kpi, status?: "draft" | "submitted") => Promise<void>;
   onDeleteKpi: (kpiId: number) => Promise<void>;
   onApproveKpi: (kpi: Kpi, status: "approved" | "rejected", comment?: string) => Promise<void>;
   feedback: KpiFeedback | null;
   actionState: KpiActionState;
 }) {
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
-  const [employeeNotes, setEmployeeNotes] = useState<Record<number, string>>({});
   const canCreate = user.role === "employee" || user.role === "hr";
   const canEdit = user.role === "employee" || user.role === "hr";
   const canDelete = user.role === "employee" || user.role === "hr";
@@ -1878,13 +1928,9 @@ function KpiManagement({
   const workspaceFeedback = feedback?.scope === "workspace" ? feedback : null;
   const reviewFeedback = feedback?.scope === "review" ? feedback : null;
 
-  const latestEmployeeComments = new Map<number, string>();
   commentHistory.forEach((item) => {
     if (item.type === "manager" && !latestManagerComments.has(item.kpi_id)) {
       latestManagerComments.set(item.kpi_id, item.comment);
-    }
-    if (item.type === "employee" && !latestEmployeeComments.has(item.kpi_id)) {
-      latestEmployeeComments.set(item.kpi_id, item.comment);
     }
   });
 
@@ -1892,20 +1938,6 @@ function KpiManagement({
     await onApproveKpi(kpi, status, reviewNotes[kpi.id]);
     setReviewNotes((current) => ({ ...current, [kpi.id]: "" }));
   };
-
-  useEffect(() => {
-    setEmployeeNotes((current) => {
-      const next = { ...current };
-
-      editableKpis.forEach((item) => {
-        if (next[item.id] === undefined) {
-          next[item.id] = latestEmployeeComments.get(item.id) ?? "";
-        }
-      });
-
-      return next;
-    });
-  }, [editableKpis, latestEmployeeComments]);
 
   return (
     <section className="space-y-6">
@@ -1925,8 +1957,8 @@ function KpiManagement({
               </h3>
               <p className="text-sm text-slate-500">
                 {canApprove
-                  ? `Review KPI submissions for ${profileName}, record your manager score, then approve or return them with comments.`
-                  : "Employees can draft KPIs, add an actual achievement note, set a self-score from 1.0 to 5.0, then submit to the manager."}
+                  ? `Review KPI submissions for ${profileName}, approve them, or return them with comments for adjustment.`
+                  : "Employees create the KPI title and goals here, then send it to the manager for approval."}
               </p>
               <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
                 {cycleFilter === "active"
@@ -1980,34 +2012,6 @@ function KpiManagement({
                     {item.description || "No description provided yet."}
                   </p>
                   <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-neutral-200 bg-slate-50 px-4 py-4 sm:col-span-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Employee actual achievement</p>
-                      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                        {latestEmployeeComments.get(item.id) || "The employee has not submitted their actual achievement yet."}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      Employee score: {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Waiting"}
-                    </div>
-                    <label className="text-sm">
-                      <span className="mb-2 block font-medium text-slate-700">Manager score</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="5"
-                        step="0.1"
-                        list={`manager-score-options-${item.id}`}
-                        value={item.managerScore ?? ""}
-                        onChange={(event) => onRowChange(item.id, "managerScore", event.target.value)}
-                        className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
-                        placeholder="Type or pick a score"
-                      />
-                      <datalist id={`manager-score-options-${item.id}`}>
-                        {["1.0", "2.0", "3.0", "4.0", "5.0"].map((score) => (
-                          <option key={score} value={score} />
-                        ))}
-                      </datalist>
-                    </label>
                     <label className="text-sm sm:col-span-2">
                       <span className="mb-2 block font-medium text-slate-700">Manager comment</span>
                       <textarea
@@ -2019,7 +2023,7 @@ function KpiManagement({
                       />
                     </label>
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:col-span-2">
-                      Add a manager score before approving this KPI.
+                      Approved KPIs move straight into My Appraisals, where scoring happens later.
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
@@ -2076,37 +2080,8 @@ function KpiManagement({
                         className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50"
                       />
                     </label>
-                    <label className="text-sm">
-                      <span className="mb-2 block font-medium text-slate-700">Actual achievement</span>
-                      <textarea
-                        value={employeeNotes[item.id] ?? ""}
-                        onChange={(event) => setEmployeeNotes((current) => ({ ...current, [item.id]: event.target.value }))}
-                        rows={4}
-                        className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
-                        placeholder="List what you actually achieved for this KPI."
-                      />
-                    </label>
-                    <label className="text-sm">
-                      <span className="mb-2 block font-medium text-slate-700">Self score</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="5"
-                        step="0.1"
-                        list={`staff-score-options-${item.id}`}
-                        value={item.selfScore ?? ""}
-                        onChange={(event) => onRowChange(item.id, "selfScore", event.target.value)}
-                        className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
-                        placeholder="Type or pick a score"
-                      />
-                      <datalist id={`staff-score-options-${item.id}`}>
-                        {["1.0", "2.0", "3.0", "4.0", "5.0"].map((score) => (
-                          <option key={score} value={score} />
-                        ))}
-                      </datalist>
-                    </label>
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      Add your self score and actual achievement before sending this KPI to the manager.
+                      The KPI becomes read-only after approval and moves into My Appraisals for the scoring stages.
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
@@ -2120,7 +2095,7 @@ function KpiManagement({
                     <button
                       disabled={actionState.kind !== null}
                       className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
-                      onClick={() => void onSaveKpi(item, "submitted", employeeNotes[item.id] ?? "")}
+                      onClick={() => void onSaveKpi(item, "submitted")}
                     >
                       {actionState.kind === "submit" && actionState.kpiId === item.id ? "Submitting..." : "Submit to manager"}
                     </button>
@@ -2151,7 +2126,7 @@ function KpiManagement({
           {canCreate && (
             <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <h3 className="text-lg font-semibold text-slate-900">Create KPI</h3>
-              <p className="text-sm text-slate-500">Start with the KPI title and description, then add your self-score when you are ready to submit it for manager review.</p>
+              <p className="text-sm text-slate-500">Start with the KPI title and goals, then send it to the manager for approval.</p>
               {createFeedback && (
                 <div
                   className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
@@ -2209,7 +2184,7 @@ function KpiManagement({
                     <p className="mt-2 text-sm text-slate-500">{item.description || "No description provided."}</p>
                     <p className="mt-3 text-sm text-slate-600">
                       {item.status === "Approved"
-                        ? `Approved with employee score ${item.selfScore !== undefined ? item.selfScore.toFixed(1) : "--"} and manager score ${item.managerScore !== undefined ? item.managerScore.toFixed(1) : "--"}.`
+                        ? "Approved and moved into My Appraisals for the scoring workflow."
                         : "Already submitted and waiting for manager review."}
                     </p>
                   </div>
@@ -2231,7 +2206,11 @@ function AppraisalFlow({
   commentHistory,
   feedback,
   actionState,
-  onSubmitFinalScore
+  onSubmitSelfScore,
+  onSubmitAchievement,
+  onSubmitManagerScore,
+  onSubmitFinalScore,
+  onUnlockEvaluation
 }: {
   user: AuthUser;
   kpis: Kpi[];
@@ -2240,9 +2219,17 @@ function AppraisalFlow({
   commentHistory: CommentHistoryItem[];
   feedback: AppraisalFeedback;
   actionState: AppraisalActionState;
+  onSubmitSelfScore: (kpiId: number, selfScore: number) => Promise<void>;
+  onSubmitAchievement: (kpiId: number, selfScore: number, achievement: string) => Promise<void>;
+  onSubmitManagerScore: (kpiId: number, managerScore: number) => Promise<void>;
   onSubmitFinalScore: (kpiId: number, finalScore: number) => Promise<void>;
+  onUnlockEvaluation: (appraisalId: number) => Promise<void>;
 }) {
   const approvedKpis = kpis.filter((item) => item.status === "Approved");
+  const [expandedKpiIds, setExpandedKpiIds] = useState<number[]>([]);
+  const [selfScoreInputs, setSelfScoreInputs] = useState<Record<number, string>>({});
+  const [achievementInputs, setAchievementInputs] = useState<Record<number, string>>({});
+  const [managerScoreInputs, setManagerScoreInputs] = useState<Record<number, string>>({});
   const [finalScoreInputs, setFinalScoreInputs] = useState<Record<number, string>>({});
   const latestEmployeeComments = new Map<number, string>();
 
@@ -2251,6 +2238,40 @@ function AppraisalFlow({
       latestEmployeeComments.set(item.kpi_id, item.comment);
     }
   });
+
+  useEffect(() => {
+    setExpandedKpiIds((current) => current.filter((id) => approvedKpis.some((item) => item.id === id)));
+  }, [approvedKpis]);
+
+  useEffect(() => {
+    setSelfScoreInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        next[item.id] = current[item.id] ?? (item.selfScore === undefined ? "" : String(item.selfScore));
+      });
+      return next;
+    });
+  }, [approvedKpis]);
+
+  useEffect(() => {
+    setAchievementInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        next[item.id] = current[item.id] ?? (latestEmployeeComments.get(item.id) ?? "");
+      });
+      return next;
+    });
+  }, [approvedKpis, commentHistory]);
+
+  useEffect(() => {
+    setManagerScoreInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        next[item.id] = current[item.id] ?? (item.managerScore === undefined ? "" : String(item.managerScore));
+      });
+      return next;
+    });
+  }, [approvedKpis]);
 
   useEffect(() => {
     setFinalScoreInputs((current) => {
@@ -2266,7 +2287,7 @@ function AppraisalFlow({
     if (!value) return null;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
-    date.setMonth(date.getMonth() + 6);
+    date.setMonth(date.getMonth() + 3);
     return date;
   };
 
@@ -2275,7 +2296,12 @@ function AppraisalFlow({
     return reviewDate ? new Date() < reviewDate : true;
   }).length;
   const scoredByManager = approvedKpis.filter((item) => item.managerScore !== undefined).length;
-  const reviewPeriodsCovered = new Set(approvedKpis.map((item) => item.appraisalPeriod).filter(Boolean)).size;
+
+  const toggleKpiDetails = (kpiId: number) => {
+    setExpandedKpiIds((current) =>
+      current.includes(kpiId) ? current.filter((id) => id !== kpiId) : [...current, kpiId]
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -2301,19 +2327,44 @@ function AppraisalFlow({
       <section className="rounded-[32px] bg-white p-6 shadow-sm ring-1 ring-black/5">
         <div>
           <h3 className="text-xl font-semibold text-slate-900">My appraisals</h3>
-          <p className="text-sm text-slate-500">Approved KPIs appear here with the goal, achievement update, scores, and final review status.</p>
+          <p className="text-sm text-slate-500">Approved KPIs appear here first as a list, then open into the locked appraisal view for scoring and evaluation.</p>
         </div>
 
         <div className="mt-6 space-y-4">
           {approvedKpis.length ? (
             approvedKpis.map((item) => {
+              const isExpanded = expandedKpiIds.includes(item.id);
               const itemReviewDate = buildReviewDate(item.appraisalCreatedAt);
               const itemFinalReviewOpen = itemReviewDate ? new Date() >= itemReviewDate : false;
+              const evaluationUnlocked = Boolean(item.appraisalEvaluationUnlockedByHr);
+              const employeeAchievement = latestEmployeeComments.get(item.id) ?? "";
+              const canEmployeeSetSelfScore = user.role === "employee" && item.selfScore === undefined;
+              const canEmployeeAddAchievement =
+                user.role === "employee" &&
+                item.selfScore !== undefined &&
+                evaluationUnlocked &&
+                itemFinalReviewOpen;
+              const canManagerScore =
+                (user.role === "manager" || user.role === "hr") &&
+                evaluationUnlocked &&
+                itemFinalReviewOpen;
+              const canHrUnlock =
+                user.role === "hr" &&
+                !evaluationUnlocked &&
+                itemFinalReviewOpen &&
+                Boolean(item.appraisalId);
+              const selfScoreInput = selfScoreInputs[item.id] ?? "";
+              const achievementInput = achievementInputs[item.id] ?? "";
+              const managerScoreInput = managerScoreInputs[item.id] ?? "";
               const finalScoreInput = finalScoreInputs[item.id] ?? "";
 
               return (
                 <div key={item.id} className="rounded-3xl border border-slate-200 bg-slate-50/70 p-5">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => toggleKpiDetails(item.id)}
+                    className="flex w-full items-center justify-between gap-4 text-left"
+                  >
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-lg font-semibold text-slate-900">{item.title}</h4>
@@ -2322,82 +2373,208 @@ function AppraisalFlow({
                           Approved
                         </span>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">
-                        {item.description || "No goal has been recorded for this KPI yet."}
+                      <p className="mt-2 text-sm text-slate-500">
+                        {isExpanded ? "Collapse appraisal details" : "Open appraisal details"}
                       </p>
                     </div>
-                    <div className="min-w-[220px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      <SnapshotRow label="Review period" value={item.appraisalPeriod || "--"} />
-                      <SnapshotRow label="Employee score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "--"} />
-                      <SnapshotRow label="Manager score" value={item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : "--"} />
-                      <SnapshotRow label="Final score" value={item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : itemFinalReviewOpen ? "Pending" : "Locked"} />
-                      <SnapshotRow label="Status" value="Approved" />
-                    </div>
-                  </div>
+                    <ChevronDown
+                      size={18}
+                      className={`shrink-0 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    />
+                  </button>
 
-                  <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Goal
-                      </p>
-                      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                        {item.description || "No goal has been recorded for this KPI yet."}
-                      </p>
-                    </div>
+                  {isExpanded && (
+                    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-100 p-5 opacity-80">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Title</p>
+                        <p className="mt-3 text-sm leading-7 text-slate-700">{item.title}</p>
+                      </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Employee actual achievement
-                      </p>
-                      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                        {latestEmployeeComments.get(item.id) || "The employee has not submitted an actual achievement update yet."}
-                      </p>
-                    </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-100 p-5 opacity-80">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Objectives</p>
+                        <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                          {item.description || "No objectives have been recorded for this KPI yet."}
+                        </p>
+                      </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
-                      <p className="text-base font-semibold text-slate-900">Final review after six months</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        {itemReviewDate
-                          ? `Final review opens on ${itemReviewDate.toLocaleDateString()}. Until then, the final score stays locked.`
-                          : "Final review opens six months after the appraisal record is created."}
-                      </p>
-                      {(user.role === "manager" || user.role === "hr") && (
-                        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-                          <label className="block flex-1 text-sm">
-                            <span className="mb-2 block font-medium text-slate-700">Final score</span>
-                            <input
-                              type="number"
-                              min="1"
-                              max="5"
-                              step="0.1"
-                              value={finalScoreInput}
-                              onChange={(event) =>
-                                setFinalScoreInputs((current) => ({
-                                  ...current,
-                                  [item.id]: event.target.value
-                                }))
-                              }
-                              disabled={!itemFinalReviewOpen}
-                              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 disabled:bg-slate-50"
-                              placeholder="Type a score"
-                            />
-                          </label>
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Appraisal summary</p>
+                        <div className="mt-4 space-y-3">
+                          <SnapshotRow label="Review period" value={item.appraisalPeriod || "--"} />
+                          <SnapshotRow label="Employee score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Not submitted"} />
+                          <SnapshotRow label="Manager score" value={item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : "Not submitted"} />
+                          <SnapshotRow label="Final score" value={item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : itemFinalReviewOpen ? "Pending" : "Locked"} />
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Evaluation stage</p>
+                        <p className="mt-3 text-sm leading-6 text-slate-600">
+                          {evaluationUnlocked
+                            ? `HR opened this appraisal for the three-month evaluation${item.appraisalEvaluationUnlockedAt ? ` on ${new Date(item.appraisalEvaluationUnlockedAt).toLocaleDateString()}` : ""}.`
+                            : itemReviewDate
+                              ? `This appraisal stays locked until HR opens the three-month evaluation stage after ${itemReviewDate.toLocaleDateString()}.`
+                              : "This appraisal stays locked until HR opens the three-month evaluation stage."}
+                        </p>
+                        {canHrUnlock && (
                           <button
-                            disabled={actionState.kind !== null || !itemFinalReviewOpen || finalScoreInput === ""}
-                            className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
-                            onClick={() => void onSubmitFinalScore(item.id, Number(finalScoreInput))}
+                            disabled={actionState.kind !== null}
+                            className="mt-4 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                            onClick={() => void onUnlockEvaluation(item.appraisalId!)}
                           >
-                            {actionState.kind === "finalScore" && actionState.kpiId === item.id ? "Saving..." : "Record final score"}
+                            {actionState.kind === "unlock" && actionState.kpiId === item.appraisalId ? "Opening..." : "Open three-month evaluation"}
                           </button>
-                        </div>
-                      )}
-                      {!itemFinalReviewOpen && (
-                        <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                          Final score is locked until the six-month review date is reached.
-                        </div>
-                      )}
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
+                        <p className="text-base font-semibold text-slate-900">Employee scoring</p>
+                        {canEmployeeSetSelfScore ? (
+                          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
+                            <label className="block flex-1 text-sm">
+                              <span className="mb-2 block font-medium text-slate-700">Employee score</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="5"
+                                step="0.1"
+                                value={selfScoreInput}
+                                onChange={(event) =>
+                                  setSelfScoreInputs((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                placeholder="Enter your score"
+                              />
+                            </label>
+                            <button
+                              disabled={actionState.kind !== null || selfScoreInput === ""}
+                              className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                              onClick={() => void onSubmitSelfScore(item.id, Number(selfScoreInput))}
+                            >
+                              {actionState.kind === "selfScore" && actionState.kpiId === item.id ? "Saving..." : "Save employee score"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                            {item.selfScore !== undefined
+                              ? `Employee score saved at ${item.selfScore.toFixed(1)}/5 and locked until the three-month evaluation stage.`
+                              : "The employee score will be entered here after approval."}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
+                        <p className="text-base font-semibold text-slate-900">Three-month evaluation</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          {itemReviewDate
+                            ? `Evaluation opens on ${itemReviewDate.toLocaleDateString()} and must be unlocked by HR before the employee and manager can continue.`
+                            : "Evaluation opens three months after approval and must be unlocked by HR first."}
+                        </p>
+
+                        {canEmployeeAddAchievement ? (
+                          <div className="mt-4 space-y-3">
+                            <label className="block text-sm">
+                              <span className="mb-2 block font-medium text-slate-700">Actual achievement</span>
+                              <textarea
+                                rows={4}
+                                value={achievementInput}
+                                onChange={(event) =>
+                                  setAchievementInputs((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                placeholder="Enter what was actually achieved after three months."
+                              />
+                            </label>
+                            <button
+                              disabled={actionState.kind !== null || achievementInput.trim() === "" || item.selfScore === undefined}
+                              className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                              onClick={() => void onSubmitAchievement(item.id, Number(item.selfScore), achievementInput)}
+                            >
+                              {actionState.kind === "selfScore" && actionState.kpiId === item.id ? "Saving..." : "Save actual achievement"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                            {employeeAchievement
+                              ? employeeAchievement
+                              : "The employee actual achievement will be entered here after HR opens the three-month evaluation stage."}
+                          </div>
+                        )}
+
+                        {canManagerScore && (
+                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <label className="block text-sm">
+                              <span className="mb-2 block font-medium text-slate-700">Manager score</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="5"
+                                step="0.1"
+                                value={managerScoreInput}
+                                onChange={(event) =>
+                                  setManagerScoreInputs((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                placeholder="Enter manager score"
+                              />
+                            </label>
+                            <div className="flex items-end">
+                              <button
+                                disabled={actionState.kind !== null || managerScoreInput === ""}
+                                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                                onClick={() => void onSubmitManagerScore(item.id, Number(managerScoreInput))}
+                              >
+                                {actionState.kind === "managerScore" && actionState.kpiId === item.id ? "Saving..." : "Save manager score"}
+                              </button>
+                            </div>
+
+                            <label className="block text-sm">
+                              <span className="mb-2 block font-medium text-slate-700">Final score</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="5"
+                                step="0.1"
+                                value={finalScoreInput}
+                                onChange={(event) =>
+                                  setFinalScoreInputs((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                placeholder="Enter final agreed score"
+                              />
+                            </label>
+                            <div className="flex items-end">
+                              <button
+                                disabled={actionState.kind !== null || finalScoreInput === "" || item.managerScore === undefined}
+                                className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                                onClick={() => void onSubmitFinalScore(item.id, Number(finalScoreInput))}
+                              >
+                                {actionState.kind === "finalScore" && actionState.kpiId === item.id ? "Saving..." : "Save final score"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {!itemFinalReviewOpen && (
+                          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                            This appraisal is locked until the three-month review date is reached.
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })

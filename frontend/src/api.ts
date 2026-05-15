@@ -67,6 +67,8 @@ export function getUserKpis(userId: number, token: string) {
       appraisal_period?: string;
       appraisal_status?: "draft" | "in_review" | "completed";
       appraisal_created_at?: string;
+      appraisal_evaluation_unlocked_by_hr?: boolean;
+      appraisal_evaluation_unlocked_at?: string | null;
       employee_signed?: boolean;
       manager_signed?: boolean;
       employee_signed_at?: string | null;
@@ -106,7 +108,7 @@ export function savePerformanceActual(token: string, payload: { kpiId: number; a
 
 export function submitSelfAppraisal(
   token: string,
-  payload: { kpiId: number; selfScore: number; comment: string }
+  payload: { kpiId: number; selfScore: number; comment?: string }
 ) {
   return request<{ performance: unknown }>(
     "/performance/self-appraisal",
@@ -117,7 +119,7 @@ export function submitSelfAppraisal(
 
 export function submitManagerScore(
   token: string,
-  payload: { kpiId: number; managerScore: number; comment: string }
+  payload: { kpiId: number; managerScore: number; comment?: string }
 ) {
   return request<{ performance: unknown }>(
     "/performance/manager-score",
@@ -133,6 +135,14 @@ export function submitFinalScore(
   return request<{ performance: unknown }>(
     "/performance/final-score",
     { method: "POST", body: JSON.stringify(payload) },
+    token
+  );
+}
+
+export function unlockEvaluation(token: string, appraisalId: number) {
+  return request<{ appraisal: unknown }>(
+    "/performance/unlock-evaluation",
+    { method: "POST", body: JSON.stringify({ appraisalId }) },
     token
   );
 }

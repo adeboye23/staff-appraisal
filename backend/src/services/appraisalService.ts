@@ -28,8 +28,25 @@ type AppraisalRow = {
   status: "draft" | "in_review" | "completed";
   employee_signed: boolean;
   manager_signed: boolean;
+  evaluation_unlocked_by_hr?: boolean;
+  evaluation_unlocked_at?: string | null;
   created_at: string;
 };
+
+export async function ensureAppraisalWorkflowColumns() {
+  await query(
+    `
+      ALTER TABLE appraisals
+      ADD COLUMN IF NOT EXISTS evaluation_unlocked_by_hr BOOLEAN NOT NULL DEFAULT FALSE
+    `
+  );
+  await query(
+    `
+      ALTER TABLE appraisals
+      ADD COLUMN IF NOT EXISTS evaluation_unlocked_at TIMESTAMP
+    `
+  );
+}
 
 export async function ensureKpiEditable(kpiId: number) {
   const result = await query<KpiRow>("SELECT * FROM kpis WHERE id = $1", [kpiId]);
@@ -152,7 +169,7 @@ export async function requirePerformanceForFinal(kpiId: number) {
   return performance;
 }
 
-export async function requireFinalReviewWindow(appraisalId: number) {
+export async function getAppraisalById(appraisalId: number) {
   const appraisal = await query<AppraisalRow>("SELECT * FROM appraisals WHERE id = $1", [appraisalId]);
   const record = appraisal.rows[0];
 
@@ -160,15 +177,31 @@ export async function requireFinalReviewWindow(appraisalId: number) {
     throw new ApiError(404, "Appraisal not found");
   }
 
-  const reviewDate = new Date(record.created_at);
-  reviewDate.setMonth(reviewDate.getMonth() + 6);
+  return record;
+}
+
+export function getEvaluationReviewDate(createdAt: string) {
+  const reviewDate = new Date(createdAt);
+  reviewDate.setMonth(reviewDate.getMonth() + 3);
 
   if (Number.isNaN(reviewDate.getTime())) {
-    throw new ApiError(500, "Unable to determine the final review date");
+    throw new ApiError(500, "Unable to determine the evaluation date");
   }
 
+  return reviewDate;
+}
+
+export async function requireEvaluationStageOpen(appraisalId: number) {
+  const record = await getAppraisalById(appraisalId);
+
+  if (!record.evaluation_unlocked_by_hr) {
+    throw new ApiError(400, "HR must open this appraisal for the three-month evaluation stage first.");
+  }
+
+  const reviewDate = getEvaluationReviewDate(record.created_at);
+
   if (new Date() < reviewDate) {
-    throw new ApiError(400, `Final score review opens on ${reviewDate.toISOString().slice(0, 10)}`);
+    throw new ApiError(400, `Evaluation opens on ${reviewDate.toISOString().slice(0, 10)}`);
   }
 
   return record;

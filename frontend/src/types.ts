@@ -25,6 +25,8 @@ export type Kpi = {
   appraisalPeriod?: string;
   appraisalStatus?: "draft" | "in_review" | "completed";
   appraisalCreatedAt?: string;
+  appraisalEvaluationUnlockedByHr?: boolean;
+  appraisalEvaluationUnlockedAt?: string | null;
   employeeSigned?: boolean;
   managerSigned?: boolean;
   employeeSignedAt?: string | null;

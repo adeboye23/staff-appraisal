@@ -6,12 +6,12 @@ export const performanceSchema = z.object({
 export const selfAppraisalSchema = z.object({
     kpiId: z.number().int().positive(),
     selfScore: z.number().min(1).max(5),
-    comment: z.string().min(2)
+    comment: z.string().min(2).optional()
 });
 export const managerScoreSchema = z.object({
     kpiId: z.number().int().positive(),
     managerScore: z.number().min(1).max(5),
-    comment: z.string().min(2)
+    comment: z.string().min(2).optional()
 });
 export const finalScoreSchema = z.object({
     kpiId: z.number().int().positive(),
@@ -21,4 +21,7 @@ export const finalScoreSchema = z.object({
 export const signOffSchema = z.object({
     appraisalId: z.number().int().positive(),
     actor: z.enum(["employee", "manager"])
+});
+export const unlockEvaluationSchema = z.object({
+    appraisalId: z.number().int().positive()
 });

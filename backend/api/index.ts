@@ -1,7 +1,8 @@
 import { app } from "../src/app.js";
+import { ensureAppraisalWorkflowColumns } from "../src/services/appraisalService.js";
 import { ensureReviewPeriodsTable } from "../src/services/reviewPeriodService.js";
 
-const initialization = ensureReviewPeriodsTable();
+const initialization = Promise.all([ensureReviewPeriodsTable(), ensureAppraisalWorkflowColumns()]);
 
 export default async function handler(
   req: Parameters<typeof app>[0],

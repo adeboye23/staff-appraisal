@@ -1,7 +1,7 @@
 import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { finalScoreSchema, managerScoreSchema, performanceSchema, selfAppraisalSchema, signOffSchema } from "../validators/performance.js";
-import { ensureKpiExists, getPerformanceByKpi, requirePerformanceForFinal, ensureAppraisalMutable, requireFinalReviewWindow } from "../services/appraisalService.js";
+import { finalScoreSchema, managerScoreSchema, performanceSchema, selfAppraisalSchema, signOffSchema, unlockEvaluationSchema } from "../validators/performance.js";
+import { ensureKpiExists, getPerformanceByKpi, requirePerformanceForFinal, ensureAppraisalMutable, requireEvaluationStageOpen, getAppraisalById, getEvaluationReviewDate } from "../services/appraisalService.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 export const createPerformance = asyncHandler(async (req, res) => {
@@ -90,20 +90,45 @@ export const selfAppraisal = asyncHandler(async (req, res) => {
     const data = selfAppraisalSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
     await ensureAppraisalMutable(kpi.appraisal_id);
+    if (kpi.status !== "approved") {
+        throw new ApiError(400, "This KPI must be approved before it can move through appraisal scoring.");
+    }
     const performance = await getPerformanceByKpi(data.kpiId);
-    const result = performance
+    if (performance?.self_score !== null && performance?.self_score !== undefined) {
+        await requireEvaluationStageOpen(kpi.appraisal_id);
+        if (Number(performance.self_score) !== data.selfScore) {
+            throw new ApiError(409, "The employee score is locked once it has been submitted.");
+        }
+        if (!data.comment?.trim()) {
+            throw new ApiError(400, "Add the employee actual achievement for the three-month evaluation.");
+        }
+        await query(`
+        UPDATE performance
+        SET updated_at = NOW()
+        WHERE kpi_id = $1
+      `, [data.kpiId]);
+    }
+    const result = performance && (performance.self_score === null || performance.self_score === undefined)
         ? await query(`
-          UPDATE performance
-          SET self_score = $1, updated_at = NOW()
-          WHERE kpi_id = $2
-          RETURNING *
-        `, [data.selfScore, data.kpiId])
-        : await query(`
-          INSERT INTO performance (kpi_id, actual, self_score)
-          VALUES ($1, 0, $2)
-          RETURNING *
-        `, [data.kpiId, data.selfScore]);
-    await query("INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'employee')", [req.user?.id ?? kpi.user_id, data.kpiId, data.comment]);
+            UPDATE performance
+            SET self_score = $1, updated_at = NOW()
+            WHERE kpi_id = $2
+            RETURNING *
+          `, [data.selfScore, data.kpiId])
+        : !performance
+            ? await query(`
+              INSERT INTO performance (kpi_id, actual, self_score)
+              VALUES ($1, 0, $2)
+              RETURNING *
+            `, [data.kpiId, data.selfScore])
+            : await query(`
+              SELECT *
+              FROM performance
+              WHERE kpi_id = $1
+            `, [data.kpiId]);
+    if (data.comment?.trim()) {
+        await query("INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'employee')", [req.user?.id ?? kpi.user_id, data.kpiId, data.comment.trim()]);
+    }
     await logAudit({
         actorUserId: req.user?.id ?? null,
         action: "performance.self_appraisal",
@@ -116,9 +141,10 @@ export const managerScore = asyncHandler(async (req, res) => {
     const data = managerScoreSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
     await ensureAppraisalMutable(kpi.appraisal_id);
+    await requireEvaluationStageOpen(kpi.appraisal_id);
     const performance = await getPerformanceByKpi(data.kpiId);
     if (!performance) {
-        throw new ApiError(400, "Performance record must exist before manager scoring");
+        throw new ApiError(400, "Employee self-score must be recorded before manager scoring");
     }
     if (performance.manager_score_locked) {
         throw new ApiError(409, "Manager score cannot be edited after submission");
@@ -129,7 +155,9 @@ export const managerScore = asyncHandler(async (req, res) => {
       WHERE kpi_id = $2
       RETURNING *
     `, [data.managerScore, data.kpiId]);
-    await query("INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'manager')", [req.user?.id, data.kpiId, data.comment]);
+    if (data.comment?.trim()) {
+        await query("INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'manager')", [req.user?.id, data.kpiId, data.comment.trim()]);
+    }
     await logAudit({
         actorUserId: req.user?.id ?? null,
         action: "performance.manager_score",
@@ -142,7 +170,7 @@ export const finalScore = asyncHandler(async (req, res) => {
     const data = finalScoreSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
     await ensureAppraisalMutable(kpi.appraisal_id);
-    await requireFinalReviewWindow(kpi.appraisal_id);
+    await requireEvaluationStageOpen(kpi.appraisal_id);
     if (!data.agree) {
         throw new ApiError(400, "Agreement checkbox must be confirmed");
     }
@@ -160,6 +188,29 @@ export const finalScore = asyncHandler(async (req, res) => {
         entityId: performance.id
     });
     res.json({ performance: result.rows[0] });
+});
+export const unlockEvaluation = asyncHandler(async (req, res) => {
+    const data = unlockEvaluationSchema.parse(req.body);
+    const appraisal = await getAppraisalById(data.appraisalId);
+    const reviewDate = getEvaluationReviewDate(appraisal.created_at);
+    if (new Date() < reviewDate) {
+        throw new ApiError(400, `This evaluation can only be opened on or after ${reviewDate.toISOString().slice(0, 10)}.`);
+    }
+    const result = await query(`
+      UPDATE appraisals
+      SET evaluation_unlocked_by_hr = TRUE,
+          evaluation_unlocked_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `, [appraisal.id]);
+    await logAudit({
+        actorUserId: req.user?.id ?? null,
+        action: "appraisal.evaluation_unlock",
+        entityType: "appraisal",
+        entityId: appraisal.id
+    });
+    res.json({ appraisal: result.rows[0] });
 });
 export const signOff = asyncHandler(async (req, res) => {
     const data = signOffSchema.parse(req.body);
