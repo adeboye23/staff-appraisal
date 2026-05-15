@@ -139,10 +139,10 @@ export function submitFinalScore(
   );
 }
 
-export function unlockEvaluation(token: string, appraisalId: number) {
+export function unlockEvaluation(token: string, appraisalId: number, unlocked = true) {
   return request<{ appraisal: unknown }>(
     "/performance/unlock-evaluation",
-    { method: "POST", body: JSON.stringify({ appraisalId }) },
+    { method: "POST", body: JSON.stringify({ appraisalId, unlocked }) },
     token
   );
 }

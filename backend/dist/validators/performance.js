@@ -23,5 +23,6 @@ export const signOffSchema = z.object({
     actor: z.enum(["employee", "manager"])
 });
 export const unlockEvaluationSchema = z.object({
-    appraisalId: z.number().int().positive()
+    appraisalId: z.number().int().positive(),
+    unlocked: z.boolean().optional().default(true)
 });

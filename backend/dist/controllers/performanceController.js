@@ -201,15 +201,15 @@ export const unlockEvaluation = asyncHandler(async (req, res) => {
     const appraisal = await getAppraisalById(data.appraisalId);
     const result = await query(`
       UPDATE appraisals
-      SET evaluation_unlocked_by_hr = TRUE,
-          evaluation_unlocked_at = NOW(),
+      SET evaluation_unlocked_by_hr = $2,
+          evaluation_unlocked_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
           updated_at = NOW()
       WHERE id = $1
       RETURNING *
-    `, [appraisal.id]);
+    `, [appraisal.id, data.unlocked]);
     await logAudit({
         actorUserId: req.user?.id ?? null,
-        action: "appraisal.evaluation_unlock",
+        action: data.unlocked ? "appraisal.evaluation_unlock" : "appraisal.evaluation_lock",
         entityType: "appraisal",
         entityId: appraisal.id
     });
