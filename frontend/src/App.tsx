@@ -183,6 +183,10 @@ function mergeKpiData(
       target: Number(item.target),
       status: normalizeStatus(item.status),
       actual: performance?.actual === null || performance?.actual === undefined ? undefined : Number(performance.actual),
+      targetSelfScore:
+        performance?.target_self_score === null || performance?.target_self_score === undefined
+          ? undefined
+          : Number(performance.target_self_score),
       selfScore:
         performance?.self_score === null || performance?.self_score === undefined
           ? undefined
@@ -719,11 +723,11 @@ function App() {
     try {
       await submitSelfAppraisal(token, { kpiId, selfScore, comment: undefined });
       await refreshProfileData();
-      setAppraisalFeedback({ tone: "success", message: "Employee score saved." });
+      setAppraisalFeedback({ tone: "success", message: "Target self-score saved." });
     } catch (error) {
       setAppraisalFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "Unable to save the employee score"
+        message: error instanceof Error ? error.message : "Unable to save the target self-score"
       });
     } finally {
       finishAppraisalAction();
@@ -737,11 +741,11 @@ function App() {
     try {
       await submitSelfAppraisal(token, { kpiId, selfScore, comment: achievement });
       await refreshProfileData();
-      setAppraisalFeedback({ tone: "success", message: "Actual achievement saved." });
+      setAppraisalFeedback({ tone: "success", message: "Post-review self-score and actual achievement saved." });
     } catch (error) {
       setAppraisalFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "Unable to save the actual achievement"
+        message: error instanceof Error ? error.message : "Unable to save the post-review evaluation"
       });
     } finally {
       finishAppraisalAction();
@@ -2227,7 +2231,8 @@ function AppraisalFlow({
 }) {
   const approvedKpis = kpis.filter((item) => item.status === "Approved");
   const [expandedKpiIds, setExpandedKpiIds] = useState<number[]>([]);
-  const [selfScoreInputs, setSelfScoreInputs] = useState<Record<number, string>>({});
+  const [targetScoreInputs, setTargetScoreInputs] = useState<Record<number, string>>({});
+  const [reviewSelfScoreInputs, setReviewSelfScoreInputs] = useState<Record<number, string>>({});
   const [achievementInputs, setAchievementInputs] = useState<Record<number, string>>({});
   const [managerScoreInputs, setManagerScoreInputs] = useState<Record<number, string>>({});
   const [finalScoreInputs, setFinalScoreInputs] = useState<Record<number, string>>({});
@@ -2244,7 +2249,17 @@ function AppraisalFlow({
   }, [approvedKpis]);
 
   useEffect(() => {
-    setSelfScoreInputs((current) => {
+    setTargetScoreInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        next[item.id] = current[item.id] ?? (item.targetSelfScore === undefined ? "" : String(item.targetSelfScore));
+      });
+      return next;
+    });
+  }, [approvedKpis]);
+
+  useEffect(() => {
+    setReviewSelfScoreInputs((current) => {
       const next: Record<number, string> = {};
       approvedKpis.forEach((item) => {
         next[item.id] = current[item.id] ?? (item.selfScore === undefined ? "" : String(item.selfScore));
@@ -2291,10 +2306,7 @@ function AppraisalFlow({
     return date;
   };
 
-  const lockedFinalReviews = approvedKpis.filter((item) => {
-    const reviewDate = buildReviewDate(item.appraisalCreatedAt);
-    return reviewDate ? new Date() < reviewDate : true;
-  }).length;
+  const lockedFinalReviews = approvedKpis.filter((item) => !item.appraisalEvaluationUnlockedByHr).length;
   const scoredByManager = approvedKpis.filter((item) => item.managerScore !== undefined).length;
 
   const toggleKpiDetails = (kpiId: number) => {
@@ -2307,9 +2319,9 @@ function AppraisalFlow({
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <MetricCard title="Approved KPIs" value={String(approvedKpis.length)} note={`Manager-approved KPIs for ${profileName}`} tone="slate" />
-        <MetricCard title="Self Scores" value={String(approvedKpis.filter((item) => item.selfScore !== undefined).length)} note="Approved KPIs that already carry the employee self-score" tone="amber" />
+        <MetricCard title="Target Scores" value={String(approvedKpis.filter((item) => item.targetSelfScore !== undefined).length)} note="Approved KPIs where the employee has set the initial target self-score" tone="amber" />
         <MetricCard title="Manager Scores" value={String(scoredByManager)} note="Approved KPIs that already carry the manager score" tone="indigo" />
-        <MetricCard title="Final Reviews Locked" value={String(lockedFinalReviews)} note="Approved KPIs still waiting for the six-month final review window" tone="green" />
+        <MetricCard title="Evaluations Locked" value={String(lockedFinalReviews)} note="Approved KPIs still waiting for HR to open the three-month evaluation stage" tone="green" />
       </div>
 
       {feedback && (
@@ -2335,25 +2347,24 @@ function AppraisalFlow({
             approvedKpis.map((item) => {
               const isExpanded = expandedKpiIds.includes(item.id);
               const itemReviewDate = buildReviewDate(item.appraisalCreatedAt);
-              const itemFinalReviewOpen = itemReviewDate ? new Date() >= itemReviewDate : false;
               const evaluationUnlocked = Boolean(item.appraisalEvaluationUnlockedByHr);
               const employeeAchievement = latestEmployeeComments.get(item.id) ?? "";
-              const canEmployeeSetSelfScore = user.role === "employee" && item.selfScore === undefined;
+              const canEmployeeSetTargetScore = user.role === "employee" && item.targetSelfScore === undefined;
               const canEmployeeAddAchievement =
                 user.role === "employee" &&
-                item.selfScore !== undefined &&
-                evaluationUnlocked &&
-                itemFinalReviewOpen;
+                item.targetSelfScore !== undefined &&
+                item.selfScore === undefined &&
+                evaluationUnlocked;
               const canManagerScore =
                 (user.role === "manager" || user.role === "hr") &&
                 evaluationUnlocked &&
-                itemFinalReviewOpen;
+                item.selfScore !== undefined;
               const canHrUnlock =
                 user.role === "hr" &&
                 !evaluationUnlocked &&
-                itemFinalReviewOpen &&
                 Boolean(item.appraisalId);
-              const selfScoreInput = selfScoreInputs[item.id] ?? "";
+              const targetScoreInput = targetScoreInputs[item.id] ?? "";
+              const reviewSelfScoreInput = reviewSelfScoreInputs[item.id] ?? "";
               const achievementInput = achievementInputs[item.id] ?? "";
               const managerScoreInput = managerScoreInputs[item.id] ?? "";
               const finalScoreInput = finalScoreInputs[item.id] ?? "";
@@ -2401,9 +2412,10 @@ function AppraisalFlow({
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Appraisal summary</p>
                         <div className="mt-4 space-y-3">
                           <SnapshotRow label="Review period" value={item.appraisalPeriod || "--"} />
-                          <SnapshotRow label="Employee score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Not submitted"} />
+                          <SnapshotRow label="Target self-score" value={item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Not submitted"} />
+                          <SnapshotRow label="Review self-score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Not submitted"} />
                           <SnapshotRow label="Manager score" value={item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : "Not submitted"} />
-                          <SnapshotRow label="Final score" value={item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : itemFinalReviewOpen ? "Pending" : "Locked"} />
+                          <SnapshotRow label="Final score" value={item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : item.selfScore !== undefined ? "Pending" : "Locked"} />
                         </div>
                       </div>
 
@@ -2413,7 +2425,7 @@ function AppraisalFlow({
                           {evaluationUnlocked
                             ? `HR opened this appraisal for the three-month evaluation${item.appraisalEvaluationUnlockedAt ? ` on ${new Date(item.appraisalEvaluationUnlockedAt).toLocaleDateString()}` : ""}.`
                             : itemReviewDate
-                              ? `This appraisal stays locked until HR opens the three-month evaluation stage after ${itemReviewDate.toLocaleDateString()}.`
+                              ? `HR can open this appraisal at any time. The planned three-month review date is ${itemReviewDate.toLocaleDateString()}.`
                               : "This appraisal stays locked until HR opens the three-month evaluation stage."}
                         </p>
                         {canHrUnlock && (
@@ -2428,40 +2440,40 @@ function AppraisalFlow({
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
-                        <p className="text-base font-semibold text-slate-900">Employee scoring</p>
-                        {canEmployeeSetSelfScore ? (
+                        <p className="text-base font-semibold text-slate-900">Initial target self-score</p>
+                        {canEmployeeSetTargetScore ? (
                           <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
                             <label className="block flex-1 text-sm">
-                              <span className="mb-2 block font-medium text-slate-700">Employee score</span>
+                              <span className="mb-2 block font-medium text-slate-700">Target self-score</span>
                               <input
                                 type="number"
                                 min="1"
                                 max="5"
                                 step="0.1"
-                                value={selfScoreInput}
+                                value={targetScoreInput}
                                 onChange={(event) =>
-                                  setSelfScoreInputs((current) => ({
+                                  setTargetScoreInputs((current) => ({
                                     ...current,
                                     [item.id]: event.target.value
                                   }))
                                 }
                                 className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
-                                placeholder="Enter your score"
+                                placeholder="Enter the target score you want to hit"
                               />
                             </label>
                             <button
-                              disabled={actionState.kind !== null || selfScoreInput === ""}
+                              disabled={actionState.kind !== null || targetScoreInput === ""}
                               className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
-                              onClick={() => void onSubmitSelfScore(item.id, Number(selfScoreInput))}
+                              onClick={() => void onSubmitSelfScore(item.id, Number(targetScoreInput))}
                             >
-                              {actionState.kind === "selfScore" && actionState.kpiId === item.id ? "Saving..." : "Save employee score"}
+                              {actionState.kind === "selfScore" && actionState.kpiId === item.id ? "Saving..." : "Save target self-score"}
                             </button>
                           </div>
                         ) : (
                           <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                            {item.selfScore !== undefined
-                              ? `Employee score saved at ${item.selfScore.toFixed(1)}/5 and locked until the three-month evaluation stage.`
-                              : "The employee score will be entered here after approval."}
+                            {item.targetSelfScore !== undefined
+                              ? `Target self-score saved at ${item.targetSelfScore.toFixed(1)}/5.${evaluationUnlocked ? " The employee can now complete the three-month review stage." : " It stays in place until HR opens the three-month evaluation stage."}`
+                              : "The employee sets the target self-score here after approval."}
                           </div>
                         )}
                       </div>
@@ -2470,12 +2482,30 @@ function AppraisalFlow({
                         <p className="text-base font-semibold text-slate-900">Three-month evaluation</p>
                         <p className="mt-2 text-sm leading-6 text-slate-500">
                           {itemReviewDate
-                            ? `Evaluation opens on ${itemReviewDate.toLocaleDateString()} and must be unlocked by HR before the employee and manager can continue.`
-                            : "Evaluation opens three months after approval and must be unlocked by HR first."}
+                            ? `The planned three-month review date is ${itemReviewDate.toLocaleDateString()}, but HR can open this evaluation earlier when needed.`
+                            : "HR must open this evaluation stage before the employee and manager can continue."}
                         </p>
 
                         {canEmployeeAddAchievement ? (
                           <div className="mt-4 space-y-3">
+                            <label className="block text-sm">
+                              <span className="mb-2 block font-medium text-slate-700">Post-review self-score</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="5"
+                                step="0.1"
+                                value={reviewSelfScoreInput}
+                                onChange={(event) =>
+                                  setReviewSelfScoreInputs((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                placeholder="Score yourself after reviewing the actual achievement"
+                              />
+                            </label>
                             <label className="block text-sm">
                               <span className="mb-2 block font-medium text-slate-700">Actual achievement</span>
                               <textarea
@@ -2492,18 +2522,22 @@ function AppraisalFlow({
                               />
                             </label>
                             <button
-                              disabled={actionState.kind !== null || achievementInput.trim() === "" || item.selfScore === undefined}
+                              disabled={actionState.kind !== null || achievementInput.trim() === "" || reviewSelfScoreInput === ""}
                               className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
-                              onClick={() => void onSubmitAchievement(item.id, Number(item.selfScore), achievementInput)}
+                              onClick={() => void onSubmitAchievement(item.id, Number(reviewSelfScoreInput), achievementInput)}
                             >
-                              {actionState.kind === "selfScore" && actionState.kpiId === item.id ? "Saving..." : "Save actual achievement"}
+                              {actionState.kind === "selfScore" && actionState.kpiId === item.id ? "Saving..." : "Save review self-score and achievement"}
                             </button>
                           </div>
                         ) : (
                           <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                            {employeeAchievement
-                              ? employeeAchievement
-                              : "The employee actual achievement will be entered here after HR opens the three-month evaluation stage."}
+                            {item.selfScore !== undefined
+                              ? `${employeeAchievement || "Actual achievement recorded."} Review self-score: ${item.selfScore.toFixed(1)}/5.`
+                              : employeeAchievement
+                                ? employeeAchievement
+                                : item.targetSelfScore !== undefined
+                                  ? "The employee will add the actual achievement and a second self-score here after HR opens the three-month evaluation stage."
+                                  : "The employee must set the initial target self-score before this stage can continue."}
                           </div>
                         )}
 
@@ -2567,9 +2601,15 @@ function AppraisalFlow({
                           </div>
                         )}
 
-                        {!itemFinalReviewOpen && (
+                        {!evaluationUnlocked && (
                           <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                            This appraisal is locked until the three-month review date is reached.
+                            This appraisal stays locked until HR opens the three-month evaluation stage.
+                          </div>
+                        )}
+
+                        {evaluationUnlocked && item.targetSelfScore !== undefined && item.selfScore === undefined && user.role !== "employee" && (
+                          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                            Waiting for the employee to submit actual achievement and the post-review self-score before manager scoring can continue.
                           </div>
                         )}
                       </div>

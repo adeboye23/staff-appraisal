@@ -15,6 +15,7 @@ type PerformanceRow = {
   id: number;
   kpi_id: number;
   actual: string;
+  target_self_score: string | null;
   self_score: string | null;
   manager_score: string | null;
   final_score: string | null;
@@ -34,6 +35,24 @@ type AppraisalRow = {
 };
 
 export async function ensureAppraisalWorkflowColumns() {
+  await query(
+    `
+      ALTER TABLE performance
+      ADD COLUMN IF NOT EXISTS target_self_score NUMERIC(8,2)
+    `
+  );
+  await query(
+    `
+      UPDATE performance
+      SET target_self_score = self_score,
+          self_score = NULL,
+          updated_at = NOW()
+      WHERE target_self_score IS NULL
+        AND self_score IS NOT NULL
+        AND manager_score IS NULL
+        AND final_score IS NULL
+    `
+  );
   await query(
     `
       ALTER TABLE appraisals
@@ -196,12 +215,6 @@ export async function requireEvaluationStageOpen(appraisalId: number) {
 
   if (!record.evaluation_unlocked_by_hr) {
     throw new ApiError(400, "HR must open this appraisal for the three-month evaluation stage first.");
-  }
-
-  const reviewDate = getEvaluationReviewDate(record.created_at);
-
-  if (new Date() < reviewDate) {
-    throw new ApiError(400, `Evaluation opens on ${reviewDate.toISOString().slice(0, 10)}`);
   }
 
   return record;

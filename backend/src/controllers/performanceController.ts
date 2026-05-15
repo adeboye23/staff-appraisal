@@ -16,8 +16,7 @@ import {
   requirePerformanceForFinal,
   ensureAppraisalMutable,
   requireEvaluationStageOpen,
-  getAppraisalById,
-  getEvaluationReviewDate
+  getAppraisalById
 } from "../services/appraisalService.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
@@ -60,7 +59,7 @@ export const getPerformance = asyncHandler(async (req: AuthedRequest, res: Respo
   const userId = Number(req.params.userId);
   const result = await query(
     `
-      SELECT k.id AS kpi_id, k.title, k.weight, k.target, p.actual, p.self_score, p.manager_score, p.final_score
+      SELECT k.id AS kpi_id, k.title, k.weight, k.target, p.actual, p.target_self_score, p.self_score, p.manager_score, p.final_score
       FROM kpis k
       LEFT JOIN performance p ON p.kpi_id = k.id
       WHERE k.user_id = $1
@@ -136,62 +135,64 @@ export const selfAppraisal = asyncHandler(async (req: AuthedRequest, res: Respon
   }
   const performance = await getPerformanceByKpi(data.kpiId);
 
-  if (performance?.self_score !== null && performance?.self_score !== undefined) {
-    await requireEvaluationStageOpen(kpi.appraisal_id);
-
-    if (Number(performance.self_score) !== data.selfScore) {
-      throw new ApiError(409, "The employee score is locked once it has been submitted.");
+  if (!performance || performance.target_self_score === null || performance.target_self_score === undefined) {
+    if (data.comment?.trim()) {
+      throw new ApiError(400, "The initial target self-score does not take an actual achievement note yet.");
     }
 
-    if (!data.comment?.trim()) {
-      throw new ApiError(400, "Add the employee actual achievement for the three-month evaluation.");
-    }
-
-    await query(
-      `
-        UPDATE performance
-        SET updated_at = NOW()
-        WHERE kpi_id = $1
-      `,
-      [data.kpiId]
-    );
-  }
-
-  const result =
-    performance && (performance.self_score === null || performance.self_score === undefined)
+    const result = performance
       ? await query(
           `
             UPDATE performance
-            SET self_score = $1, updated_at = NOW()
+            SET target_self_score = $1, updated_at = NOW()
             WHERE kpi_id = $2
             RETURNING *
           `,
           [data.selfScore, data.kpiId]
         )
-      : !performance
-        ? await query(
-            `
-              INSERT INTO performance (kpi_id, actual, self_score)
-              VALUES ($1, 0, $2)
-              RETURNING *
-            `,
-            [data.kpiId, data.selfScore]
-          )
-        : await query(
-            `
-              SELECT *
-              FROM performance
-              WHERE kpi_id = $1
-            `,
-            [data.kpiId]
-          );
+      : await query(
+          `
+            INSERT INTO performance (kpi_id, actual, target_self_score)
+            VALUES ($1, 0, $2)
+            RETURNING *
+          `,
+          [data.kpiId, data.selfScore]
+        );
 
-  if (data.comment?.trim()) {
-    await query(
-      "INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'employee')",
-      [req.user?.id ?? kpi.user_id, data.kpiId, data.comment.trim()]
-    );
+    await logAudit({
+      actorUserId: req.user?.id ?? null,
+      action: "performance.target_self_score",
+      entityType: "performance",
+      entityId: result.rows[0].id
+    });
+    res.status(performance ? 200 : 201).json({ performance: result.rows[0] });
+    return;
   }
+
+  await requireEvaluationStageOpen(kpi.appraisal_id);
+
+  if (performance.self_score !== null && performance.self_score !== undefined) {
+    throw new ApiError(409, "The post-review self-score is locked once it has been submitted.");
+  }
+
+  if (!data.comment?.trim()) {
+    throw new ApiError(400, "Add the employee actual achievement for the three-month evaluation.");
+  }
+
+  const result = await query(
+    `
+      UPDATE performance
+      SET self_score = $1, updated_at = NOW()
+      WHERE kpi_id = $2
+      RETURNING *
+    `,
+    [data.selfScore, data.kpiId]
+  );
+
+  await query(
+    "INSERT INTO comments (user_id, kpi_id, comment, type) VALUES ($1, $2, $3, 'employee')",
+    [req.user?.id ?? kpi.user_id, data.kpiId, data.comment.trim()]
+  );
   await logAudit({
     actorUserId: req.user?.id ?? null,
     action: "performance.self_appraisal",
@@ -207,8 +208,11 @@ export const managerScore = asyncHandler(async (req: AuthedRequest, res: Respons
   await ensureAppraisalMutable(kpi.appraisal_id);
   await requireEvaluationStageOpen(kpi.appraisal_id);
   const performance = await getPerformanceByKpi(data.kpiId);
-  if (!performance) {
-    throw new ApiError(400, "Employee self-score must be recorded before manager scoring");
+  if (!performance || performance.target_self_score === null || performance.target_self_score === undefined) {
+    throw new ApiError(400, "Employee target score must be recorded before manager scoring");
+  }
+  if (performance.self_score === null || performance.self_score === undefined) {
+    throw new ApiError(400, "Employee post-review self-score must be recorded before manager scoring");
   }
   if (performance.manager_score_locked) {
     throw new ApiError(409, "Manager score cannot be edited after submission");
@@ -269,11 +273,6 @@ export const finalScore = asyncHandler(async (req: AuthedRequest, res: Response)
 export const unlockEvaluation = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const data = unlockEvaluationSchema.parse(req.body);
   const appraisal = await getAppraisalById(data.appraisalId);
-  const reviewDate = getEvaluationReviewDate(appraisal.created_at);
-
-  if (new Date() < reviewDate) {
-    throw new ApiError(400, `This evaluation can only be opened on or after ${reviewDate.toISOString().slice(0, 10)}.`);
-  }
 
   const result = await query(
     `

@@ -37,6 +37,7 @@ export type Kpi = {
   target: number;
   status: KPIStatus;
   actual?: number;
+  targetSelfScore?: number;
   selfScore?: number;
   managerScore?: number;
   finalScore?: number;
@@ -48,6 +49,7 @@ export type PerformanceRow = {
   weight: number | string;
   target: number | string;
   actual: number | string | null;
+  target_self_score: number | string | null;
   self_score: number | string | null;
   manager_score: number | string | null;
   final_score: number | string | null;
