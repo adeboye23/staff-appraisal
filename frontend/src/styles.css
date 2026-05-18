@@ -169,13 +169,7 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background-image:
-    linear-gradient(to right, rgba(15, 23, 42, 0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.025) 1px, transparent 1px);
-  background-size: 56px 56px;
-  background-position: -1px -1px;
-  mask-image: radial-gradient(ellipse at top, #000 30%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at top, #000 30%, transparent 70%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
   pointer-events: none;
   z-index: 0;
 }
@@ -263,7 +257,7 @@ aside .bg-white\/5 {
 aside .bg-brand,
 aside .bg-slate-900.rounded-\[18px\],
 aside .bg-slate-900.rounded-2xl {
-  background: linear-gradient(135deg, #6366f1, #4338ca) !important;
+  background: #111827 !important;
   color: #fff !important;
 }
 

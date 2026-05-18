@@ -240,6 +240,18 @@ function KpiPeriodBadge({ period }: { period?: string }) {
   );
 }
 
+function LockStateBadge({ opened }: { opened: boolean }) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+        opened ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {opened ? "Opened" : "Locked"}
+    </span>
+  );
+}
+
 function getDashboardAverageScore(summary: DashboardResponse["summary"]) {
   if ("organization_average_score" in summary) return summary.organization_average_score;
   if ("team_average_score" in summary) return summary.team_average_score;
@@ -1266,7 +1278,7 @@ function Sidebar({
                 <h1 className="text-lg font-bold text-white">News Central</h1>
               </div>
               <button
-                className="rounded-xl border border-slate-700 p-2 text-slate-300"
+                className="rounded-lg border border-slate-700/70 bg-transparent p-2 text-slate-300"
                 onClick={onClose}
                 aria-label="Close sidebar"
               >
@@ -1377,7 +1389,7 @@ function Topbar({
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
-            className="rounded-xl border border-neutral-200 p-2 text-slate-600 md:hidden"
+            className="rounded-lg border border-neutral-200 bg-white p-2 text-slate-600 md:hidden"
             onClick={onMenuClick}
             aria-label="Open sidebar"
           >
@@ -1415,10 +1427,10 @@ function Topbar({
               </div>
             )}
           </div>
-          <div className="relative">
+            <div className="relative">
           <button
             onClick={() => setNotificationsOpen((current) => !current)}
-            className="relative rounded-2xl border border-neutral-200 bg-white p-2.5 text-slate-600"
+            className="relative rounded-lg border border-neutral-200 bg-white p-2.5 text-slate-600"
           >
             <Bell size={18} />
             {notificationCount > 0 ? (
@@ -1450,7 +1462,7 @@ function Topbar({
             )}
           </div>
           <button
-            className="rounded-2xl border border-neutral-200 bg-white p-2.5 text-slate-600"
+            className="rounded-lg border border-neutral-200 bg-white p-2.5 text-slate-600"
             onClick={onLogout}
             title="Log out"
           >
@@ -2326,8 +2338,8 @@ function AppraisalFlow({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <MetricCard title="Approved KPIs" value={String(approvedKpis.length)} note={`Manager-approved KPIs for ${profileName}`} tone="slate" />
         <MetricCard title="Target Scores" value={String(approvedKpis.filter((item) => item.targetSelfScore !== undefined).length)} note="Initial employee target scores already recorded" tone="amber" />
-        <MetricCard title="Review Stage Done" value={String(completedReviewStage)} note="Employee review stage completed after HR access opened" tone="indigo" />
-        <MetricCard title="Evaluations Locked" value={String(lockedFinalReviews)} note="Records currently closed to the three-month evaluation stage" tone="green" />
+        <MetricCard title="Review Stage Done" value={String(completedReviewStage)} note="Employee review stage completed" tone="indigo" />
+        <MetricCard title="Locked" value={String(lockedFinalReviews)} note="KPIs still waiting to be opened by HR" tone="green" />
       </div>
 
       {feedback && (
@@ -2346,7 +2358,7 @@ function AppraisalFlow({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h3 className="text-xl font-semibold text-slate-900">Appraisal register</h3>
-            <p className="text-sm text-slate-500">A simplified view of every approved KPI and where it currently sits in the appraisal workflow.</p>
+            <p className="text-sm text-slate-500">A clean view of every approved KPI and whether it is opened or locked for appraisal.</p>
           </div>
           <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
             Select a row to work on the appraisal details below.
@@ -2361,11 +2373,12 @@ function AppraisalFlow({
                   <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     <th className="px-4 py-4">KPI</th>
                     <th className="px-4 py-4">Cycle</th>
+                    <th className="px-4 py-4">State</th>
                     <th className="px-4 py-4">Target score</th>
                     <th className="px-4 py-4">Review stage</th>
                     <th className="px-4 py-4">Manager</th>
                     <th className="px-4 py-4">Final</th>
-                    <th className="px-4 py-4">HR access</th>
+                    {user.role === "hr" ? <th className="px-4 py-4">Action</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -2393,11 +2406,14 @@ function AppraisalFlow({
                           </div>
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">{item.appraisalPeriod || "--"}</td>
+                        <td className="px-4 py-4 text-sm">
+                          <LockStateBadge opened={evaluationUnlocked} />
+                        </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Pending"}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
-                          {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : evaluationUnlocked ? "Awaiting employee" : "Closed"}
+                          {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : evaluationUnlocked ? "Awaiting employee" : "Locked"}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : item.selfScore !== undefined ? "Pending" : "Locked"}
@@ -2405,16 +2421,15 @@ function AppraisalFlow({
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : item.managerScore !== undefined ? "Pending" : "Locked"}
                         </td>
-                        <td className="px-4 py-4 text-sm">
-                          <div className="flex items-center gap-3">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${evaluationUnlocked ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                              {evaluationUnlocked ? "Open" : "Closed"}
-                            </span>
+                        {user.role === "hr" ? (
+                          <td className="px-4 py-4 text-sm">
                             {canHrToggle && (
                               <button
                                 type="button"
                                 disabled={actionState.kind !== null}
-                                className={`rounded-xl px-3 py-2 text-xs font-semibold ${evaluationUnlocked ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white"}`}
+                                className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                                  evaluationUnlocked ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white"
+                                }`}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   void onUnlockEvaluation(item.appraisalId!, !evaluationUnlocked);
@@ -2423,12 +2438,12 @@ function AppraisalFlow({
                                 {actionState.kind === "unlock" && actionState.kpiId === item.appraisalId
                                   ? "Saving..."
                                   : evaluationUnlocked
-                                    ? "Close"
+                                    ? "Lock"
                                     : "Open"}
                               </button>
                             )}
-                          </div>
-                        </td>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -2474,35 +2489,14 @@ function AppraisalFlow({
                 </div>
                 <div className="grid grid-cols-2 gap-3 lg:min-w-[340px]">
                   <SnapshotRow label="Cycle" value={item.appraisalPeriod || "--"} />
-                  <SnapshotRow label="HR access" value={evaluationUnlocked ? "Open" : "Closed"} />
+                  <SnapshotRow label="State" value={evaluationUnlocked ? "Opened" : "Locked"} />
                   <SnapshotRow label="Target self-score" value={item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Pending"} />
                   <SnapshotRow label="Review self-score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Pending"} />
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Workflow status</p>
-                  <div className="mt-4 space-y-3 text-sm text-slate-600">
-                    <p>{item.targetSelfScore !== undefined ? "Initial target self-score has been captured." : "Waiting for the employee to set the initial target self-score."}</p>
-                    <p>
-                      {evaluationUnlocked
-                        ? `HR opened this stage${item.appraisalEvaluationUnlockedAt ? ` on ${new Date(item.appraisalEvaluationUnlockedAt).toLocaleDateString()}` : ""}.`
-                        : itemReviewDate
-                          ? `HR has this stage closed. The planned review date is ${itemReviewDate.toLocaleDateString()}.`
-                          : "HR has this stage closed."}
-                    </p>
-                    <p>
-                      {item.selfScore !== undefined
-                        ? "The employee completed the review stage and manager scoring can continue."
-                        : evaluationUnlocked
-                          ? "The employee can now enter actual achievement and the post-review self-score."
-                          : "The employee cannot continue until HR opens the stage."}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-2">
+              <div className="mt-6 grid grid-cols-1 gap-5">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
                   <p className="text-base font-semibold text-slate-900">Employee stage</p>
                   {canEmployeeSetTargetScore ? (
                     <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
@@ -2544,8 +2538,8 @@ function AppraisalFlow({
                     <p className="text-base font-semibold text-slate-900">Three-month review stage</p>
                     <p className="mt-2 text-sm text-slate-500">
                       {itemReviewDate
-                        ? `Planned review date: ${itemReviewDate.toLocaleDateString()}. HR can still open or close this stage whenever needed.`
-                        : "HR controls when this stage is open for the employee and manager."}
+                        ? `Planned review date: ${itemReviewDate.toLocaleDateString()}.`
+                        : "This stage opens only when HR allows it."}
                     </p>
 
                     {canEmployeeAddAchievement ? (
@@ -2600,14 +2594,14 @@ function AppraisalFlow({
                             : item.targetSelfScore !== undefined
                               ? evaluationUnlocked
                                 ? "The employee can now complete the review stage."
-                                : "HR currently has this stage closed."
+                                : "This KPI is currently locked."
                               : "The employee must set the initial target self-score before this stage can continue."}
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 xl:col-span-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
                   <p className="text-base font-semibold text-slate-900">Manager and final scoring</p>
                   {canManagerScore ? (
                     <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -2670,7 +2664,7 @@ function AppraisalFlow({
                   ) : (
                     <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
                       {!evaluationUnlocked
-                        ? "HR has this stage closed, so manager scoring is currently locked."
+                        ? "This KPI is locked, so manager scoring is not available yet."
                         : item.selfScore === undefined
                           ? "Waiting for the employee to complete the review stage before manager scoring can continue."
                           : "Manager scoring will appear here when the record is ready."}
@@ -2859,11 +2853,11 @@ function RoleWorkspaceBanner({
           title: activeView === "settings" ? "Organization control room" : "HR control room",
           body:
             activeView === "appraisals"
-              ? `Open or close appraisal stages, monitor readiness, and guide the workflow for ${profileName}.`
+              ? `Open or lock appraisal stages and monitor progress for ${profileName}.`
               : activeView === "reviews"
                 ? "Review employee progress, approval queues, and organizational readiness from one place."
-                : "Manage the organization's appraisal cycle, staff records, and reporting controls.",
-          tone: "border-l-4 border-l-sky-500 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_62%)]"
+                : "Manage the appraisal cycle, staff records, and reporting controls.",
+          tone: "border border-slate-200 bg-white"
         }
       : user.role === "manager"
         ? {
@@ -2875,16 +2869,16 @@ function RoleWorkspaceBanner({
                 : activeView === "reviews"
                   ? "Focus on submitted KPIs, approvals, and review readiness across your team."
                   : "Work through team performance, approvals, and reporting with a manager-first view.",
-            tone: "border-l-4 border-l-amber-500 bg-[linear-gradient(135deg,#fffbeb_0%,#ffffff_62%)]"
+            tone: "border border-slate-200 bg-white"
           }
         : {
             eyebrow: "Employee workspace",
             title: "Personal appraisal workspace",
             body:
               activeView === "appraisals"
-                ? "Track your target score, complete the review stage when HR opens it, and follow the appraisal process clearly."
+                ? "Track your target score and complete each appraisal stage when it is opened."
                 : "Manage your KPIs, performance records, and reports from your personal workspace.",
-            tone: "border-l-4 border-l-emerald-500 bg-[linear-gradient(135deg,#ecfdf5_0%,#ffffff_62%)]"
+            tone: "border border-slate-200 bg-white"
           };
 
   return (

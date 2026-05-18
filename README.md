@@ -38,6 +38,13 @@ npm run dev:backend
 - Frontend: `frontend/.env.example`
 - Backend: `backend/.env.example`
 
+## Production deployment notes
+
+- Set a strong `JWT_SECRET` before deploying. The API now refuses to start with the default placeholder secret.
+- Set `DATABASE_URL` to your production PostgreSQL connection string.
+- Set `CLIENT_URL` to one or more allowed frontend origins. Separate multiple values with commas.
+- In production, use HTTPS frontend origins in `CLIENT_URL`.
+
 ## Backend notes
 
 - Uses JWT auth and RBAC middleware

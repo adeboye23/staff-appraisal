@@ -43,7 +43,32 @@ function parseClientUrls(value) {
     });
 }
 const clientUrls = parseClientUrls(process.env.CLIENT_URL);
+const nodeEnv = process.env.NODE_ENV || "development";
+const isProduction = nodeEnv === "production";
+function validateConfig() {
+    const issues = [];
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "change_me") {
+        issues.push("JWT_SECRET must be set to a strong non-default value.");
+    }
+    if (!process.env.DATABASE_URL?.trim()) {
+        issues.push("DATABASE_URL must be set.");
+    }
+    if (clientUrls.length === 0) {
+        issues.push("CLIENT_URL must include at least one valid frontend origin.");
+    }
+    if (isProduction) {
+        if (clientUrls.some((url) => url.startsWith("http://"))) {
+            issues.push("CLIENT_URL must use HTTPS origins in production.");
+        }
+    }
+    if (issues.length > 0) {
+        throw new Error(`Invalid environment configuration:\n- ${issues.join("\n- ")}`);
+    }
+}
+validateConfig();
 export const config = {
+    nodeEnv,
+    isProduction,
     port: Number(process.env.PORT || 4000),
     databaseUrl: normalizeDatabaseUrl(process.env.DATABASE_URL || ""),
     jwtSecret: process.env.JWT_SECRET || "change_me",
