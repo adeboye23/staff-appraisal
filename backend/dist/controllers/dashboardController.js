@@ -12,7 +12,7 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
           COUNT(k.id) FILTER (WHERE k.status = 'submitted') AS submitted_kpis,
           COUNT(k.id) AS total_kpis,
           COUNT(p.kpi_id) FILTER (WHERE p.self_score IS NOT NULL) AS self_appraised,
-          ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_final_score
+          ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_final_score
         FROM kpis k
         LEFT JOIN performance p ON p.kpi_id = k.id
         WHERE k.user_id = $1
@@ -28,7 +28,7 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
           COUNT(DISTINCT u.id) AS team_members,
           COUNT(k.id) FILTER (WHERE k.status = 'submitted') AS pending_approvals,
           COUNT(k.id) FILTER (WHERE k.status = 'rejected') AS pending_scoring_tasks,
-          ROUND(COALESCE(AVG(p.final_score), 0), 1) AS team_average_score
+          ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS team_average_score
         FROM users u
         LEFT JOIN kpis k ON k.user_id = u.id
         LEFT JOIN performance p ON p.kpi_id = k.id
@@ -41,7 +41,7 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
           d.name AS department,
           COUNT(k.id) FILTER (WHERE k.status = 'submitted') AS pending_approvals,
           COUNT(k.id) FILTER (WHERE k.status = 'rejected') AS pending_scoring_tasks,
-          ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_score
+          ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_score
         FROM users u
         LEFT JOIN departments d ON d.id = u.department_id
         LEFT JOIN kpis k ON k.user_id = u.id
@@ -67,7 +67,7 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
           ),
           1
         ) AS completion_rate,
-        ROUND(COALESCE(AVG(p.final_score), 0), 1) AS organization_average_score
+        ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS organization_average_score
       FROM departments d
       LEFT JOIN users u ON u.department_id = d.id AND u.role = 'employee'
       LEFT JOIN appraisals a ON a.user_id = u.id
@@ -86,7 +86,7 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
           ),
           1
         ) AS completion_rate,
-        ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_score
+        ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_score
       FROM departments d
       LEFT JOIN users u ON u.department_id = d.id
       LEFT JOIN appraisals a ON a.user_id = u.id
@@ -97,16 +97,16 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
     `);
     const performanceDistribution = await query(`
       WITH scored AS (
-        SELECT AVG(p.final_score) AS average_score
+        SELECT AVG(p.final_score) * 20 AS average_score
         FROM appraisals a
         JOIN kpis k ON k.appraisal_id = a.id
         JOIN performance p ON p.kpi_id = k.id
         GROUP BY a.id
       )
       SELECT
-        COUNT(*) FILTER (WHERE average_score < 20) AS needs_support,
-        COUNT(*) FILTER (WHERE average_score >= 20 AND average_score < 24) AS steady,
-        COUNT(*) FILTER (WHERE average_score >= 24) AS high_performing
+        COUNT(*) FILTER (WHERE average_score < 60) AS needs_support,
+        COUNT(*) FILTER (WHERE average_score >= 60 AND average_score < 80) AS steady,
+        COUNT(*) FILTER (WHERE average_score >= 80) AS high_performing
       FROM scored
     `);
     return res.json({

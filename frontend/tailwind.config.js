@@ -5,12 +5,12 @@ export default {
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#4f46e5",
-          50: "#eef0ff",
-          100: "#e0e3ff",
-          500: "#6366f1",
-          600: "#5b5cf0",
-          700: "#4f46e5"
+          DEFAULT: "#c1121f",
+          50: "#fff1f2",
+          100: "#ffe1e5",
+          500: "#e11d2e",
+          600: "#c1121f",
+          700: "#9f1239"
         },
         success: "#10b981",
         danger: "#f43f5e",
@@ -37,9 +37,9 @@ export default {
       },
       backgroundImage: {
         "brand-gradient":
-          "linear-gradient(135deg,#6366f1 0%,#8b5cf6 45%,#ec4899 100%)",
+          "linear-gradient(135deg,#7f1d1d 0%,#c1121f 45%,#ef4444 100%)",
         "brand-soft":
-          "linear-gradient(135deg,rgba(99,102,241,0.14) 0%,rgba(236,72,153,0.10) 100%)"
+          "linear-gradient(135deg,rgba(193,18,31,0.14) 0%,rgba(239,68,68,0.10) 100%)"
       },
       keyframes: {
         floatA: {

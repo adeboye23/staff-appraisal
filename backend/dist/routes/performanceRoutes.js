@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getComments, createPerformance, finalScore, getPerformance, getTimeline, managerScore, selfAppraisal, signOff, unlockEvaluation } from "../controllers/performanceController.js";
+import { getComments, createPerformance, directorReview, finalScore, getPerformance, getTimeline, managerScore, selfAppraisal, signOff, unlockEvaluation } from "../controllers/performanceController.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 const router = Router();
 router.use(requireAuth);
@@ -8,8 +8,9 @@ router.get("/:userId/timeline", getTimeline);
 router.get("/:userId/comments", getComments);
 router.get("/:userId", getPerformance);
 router.post("/manager-score", requireRole("manager", "hr"), managerScore);
-router.post("/self-appraisal", requireRole("employee", "hr"), selfAppraisal);
+router.post("/self-appraisal", requireRole("employee", "manager", "hr"), selfAppraisal);
 router.post("/final-score", requireRole("manager", "hr"), finalScore);
+router.post("/director-review", requireRole("hr"), directorReview);
 router.post("/unlock-evaluation", requireRole("hr"), unlockEvaluation);
 router.post("/signoff", requireRole("employee", "manager", "hr"), signOff);
 export default router;

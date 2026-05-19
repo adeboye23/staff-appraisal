@@ -52,13 +52,14 @@ import {
   requestPasswordReset,
   resetStaffPassword,
   setActiveReviewPeriod as setActiveReviewPeriodRequest,
+  submitDirectorReview,
   submitFinalScore,
   submitManagerScore,
   submitSelfAppraisal,
-  unlockEvaluation as unlockEvaluationRequest,
   updateKpi as updateKpiRequest,
   updateStaff
 } from "./api";
+import companyLogo from "./assets/news-central-logo.png";
 import { navItems, reportTrend } from "./data";
 import {
   AuthUser,
@@ -101,21 +102,7 @@ const statusLabels: Record<Kpi["status"], string> = {
 
 const storageKey = "news-central-auth";
 
-const nameOverrides: Record<string, string> = {
-  "hr@newscentral.com": "Obehi NC",
-  "obehi@newscentral.com": "Obehi NC",
-  "amina@newscentral.com": "Amina NC",
-  "nkechi@newscentral.com": "Nkechi NC",
-  "manager@newscentral.com": "Donald NC",
-  "donald@newscentral.com": "Donald NC",
-  "katleen@newscentral.com": "Katleen NC",
-  "omolara@newscentral.com": "Omolara NC",
-  "tolu@newscentral.com": "Emmanuel NC",
-  "emmanuel@newscentral.com": "Emmanuel NC",
-  "maya@newscentral.com": "Motun NC",
-  "motun@newscentral.com": "Motun NC",
-  "tomisin@newscentral.com": "Tomisin NC"
-};
+const nameOverrides: Record<string, string> = {};
 
 type SessionState = LoginResponse | null;
 type KpiActionKind = "create" | "save" | "submit" | "delete" | "approve" | "return";
@@ -125,7 +112,7 @@ type KpiFeedback = {
   tone: "success" | "error";
   message: string;
 };
-type AppraisalActionKind = "selfScore" | "managerScore" | "finalScore" | "unlock";
+type AppraisalActionKind = "selfScore" | "managerScore" | "finalScore" | "directorReview";
 type AppraisalActionState = { kind: AppraisalActionKind | null; kpiId?: number };
 type AppraisalFeedback = { tone: "success" | "error"; message: string } | null;
 
@@ -147,8 +134,12 @@ function mergeKpiData(
     appraisal_period?: string;
     appraisal_status?: "draft" | "in_review" | "completed";
     appraisal_created_at?: string;
+    appraisal_review_date?: string | null;
     appraisal_evaluation_unlocked_by_hr?: boolean;
     appraisal_evaluation_unlocked_at?: string | null;
+    appraisal_director_overall_remark?: string | null;
+    appraisal_director_improvement_suggestions?: string | null;
+    appraisal_director_training_recommendations?: string | null;
     employee_signed?: boolean;
     manager_signed?: boolean;
     employee_signed_at?: string | null;
@@ -171,8 +162,12 @@ function mergeKpiData(
       appraisalPeriod: item.appraisal_period,
       appraisalStatus: item.appraisal_status,
       appraisalCreatedAt: item.appraisal_created_at,
+      appraisalReviewDate: item.appraisal_review_date ?? null,
       appraisalEvaluationUnlockedByHr: item.appraisal_evaluation_unlocked_by_hr,
       appraisalEvaluationUnlockedAt: item.appraisal_evaluation_unlocked_at ?? null,
+      appraisalDirectorOverallRemark: item.appraisal_director_overall_remark ?? null,
+      appraisalDirectorImprovementSuggestions: item.appraisal_director_improvement_suggestions ?? null,
+      appraisalDirectorTrainingRecommendations: item.appraisal_director_training_recommendations ?? null,
       employeeSigned: item.employee_signed,
       managerSigned: item.manager_signed,
       employeeSignedAt: item.employee_signed_at ?? null,
@@ -204,7 +199,9 @@ function mergeKpiData(
 }
 
 function getDisplayName(user: Pick<AuthUser, "email">) {
-  return nameOverrides[user.email] || user.email.split("@")[0];
+  return "name" in user && typeof user.name === "string"
+    ? user.name
+    : nameOverrides[user.email] || user.email.split("@")[0];
 }
 
 function getDisplayNameFromStaff(staff: StaffMember) {
@@ -214,6 +211,18 @@ function getDisplayNameFromStaff(staff: StaffMember) {
 function toNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) return 0;
   return Number(value);
+}
+
+function toScorePercent(value: string | number | null | undefined) {
+  return Number((toNumber(value) * 20).toFixed(1));
+}
+
+function isReviewDateOpen(reviewDate?: string | null) {
+  if (!reviewDate) return true;
+  const deadline = new Date(reviewDate);
+  if (Number.isNaN(deadline.getTime())) return true;
+  deadline.setHours(23, 59, 59, 999);
+  return deadline.getTime() >= Date.now();
 }
 
 function getNavItemsForRole(role: Role) {
@@ -249,6 +258,20 @@ function LockStateBadge({ opened }: { opened: boolean }) {
     >
       {opened ? "Opened" : "Locked"}
     </span>
+  );
+}
+
+function BrandLogo({ className = "", withLabel = false }: { className?: string; withLabel?: boolean }) {
+  return (
+    <div className={`flex items-center gap-3 ${className}`}>
+      <img src={companyLogo} alt="News Central" className="h-12 w-12 rounded-xl object-cover" />
+      {withLabel ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">News Central</p>
+          <p className="text-sm font-semibold text-slate-900">Performance Portal</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -315,7 +338,20 @@ function App() {
       getReviewPeriods(authToken)
     ]);
 
-    setStaff(staffResponse.data);
+    const selfDirectoryEntry: StaffMember = {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      role: currentUser.role,
+      department: null,
+      manager_id: null
+    };
+    const mergedStaff =
+      currentUser.role === "employee"
+        ? staffResponse.data
+        : [selfDirectoryEntry, ...staffResponse.data.filter((item) => item.id !== currentUser.id)];
+
+    setStaff(mergedStaff);
     setDepartments(departmentsResponse.data);
     setReviewPeriods(periodsResponse.data);
     setActiveReviewPeriod(periodsResponse.active);
@@ -324,15 +360,15 @@ function App() {
       setSelectedProfileId(currentUser.id);
     } else {
       setSelectedProfileId((current) => {
-        if (current && staffResponse.data.some((item) => item.id === current)) {
+        if (current && mergedStaff.some((item) => item.id === current)) {
           return current;
         }
 
-        if (preferredProfileId && staffResponse.data.some((item) => item.id === preferredProfileId)) {
+        if (preferredProfileId && mergedStaff.some((item) => item.id === preferredProfileId)) {
           return preferredProfileId;
         }
 
-        return staffResponse.data[0]?.id ?? null;
+        return mergedStaff[0]?.id ?? null;
       });
     }
   };
@@ -445,7 +481,7 @@ function App() {
       return {
         id: user.id,
         email: user.email,
-        name: getDisplayName(user),
+        name: user.name,
         role: user.role,
         department: null
       };
@@ -625,11 +661,16 @@ function App() {
       if (!newKpiForm.title.trim()) {
         throw new Error("KPI title is required.");
       }
+      if (!newKpiForm.weight || Number(newKpiForm.weight) <= 0) {
+        throw new Error("KPI weight must be greater than 0.");
+      }
       await createKpiRequest(token, {
         userId: selectedProfileId,
         period: activeReviewPeriod?.name,
         title: newKpiForm.title,
-        description: newKpiForm.description
+        description: newKpiForm.description,
+        weight: newKpiForm.weight ? Number(newKpiForm.weight) : 0,
+        target: newKpiForm.target ? Number(newKpiForm.target) : 0
       });
       await refreshProfileData();
       setNewKpiForm({ title: "", description: "", weight: "", target: "" });
@@ -657,10 +698,15 @@ function App() {
       if (!kpi.title.trim()) {
         throw new Error("KPI title is required before saving.");
       }
+      if (Number(kpi.weight) <= 0) {
+        throw new Error("KPI weight must be greater than 0 before saving.");
+      }
 
       await updateKpiRequest(token, kpi.id, {
         title: kpi.title,
-        description: kpi.description
+        description: kpi.description,
+        weight: kpi.weight,
+        target: kpi.target
       });
 
       if (status) {
@@ -715,12 +761,6 @@ function App() {
       if (status === "rejected" && !comment?.trim()) {
         throw new Error("Add manager feedback before sending a KPI back for adjustment.");
       }
-
-      await updateKpiRequest(token, kpi.id, {
-        title: kpi.title,
-        description: kpi.description
-      });
-
       await approveKpiRequest(token, kpi.id, {
         status,
         comment: comment?.trim() || undefined
@@ -823,21 +863,31 @@ function App() {
     }
   };
 
-  const handleUnlockEvaluation = async (appraisalId: number, unlocked: boolean) => {
+  const handleSubmitDirectorReview = async (
+    appraisalId: number,
+    overallRemark: string,
+    improvementSuggestions: string,
+    trainingRecommendations: string
+  ) => {
     if (!token) return;
-    beginAppraisalAction("unlock", appraisalId);
+    beginAppraisalAction("directorReview", appraisalId);
 
     try {
-      await unlockEvaluationRequest(token, appraisalId, unlocked);
+      await submitDirectorReview(token, {
+        appraisalId,
+        overallRemark,
+        improvementSuggestions: improvementSuggestions || undefined,
+        trainingRecommendations: trainingRecommendations || undefined
+      });
       await refreshProfileData();
       setAppraisalFeedback({
         tone: "success",
-        message: unlocked ? "Three-month evaluation opened by HR." : "Three-month evaluation closed by HR."
+        message: "Director review saved."
       });
     } catch (error) {
       setAppraisalFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "Unable to update the evaluation stage"
+        message: error instanceof Error ? error.message : "Unable to save the director review"
       });
     } finally {
       finishAppraisalAction();
@@ -1008,6 +1058,7 @@ function App() {
               {activeView === "kpis" && (
                 <KpiManagement
                   user={user}
+                  isOwnProfile={selectedProfileId === user.id}
                   kpiRows={visibleKpiRows}
                   commentHistory={commentHistory}
                   onRowChange={updateKpiRow}
@@ -1028,6 +1079,7 @@ function App() {
               {activeView === "appraisals" && (
                 <AppraisalFlow
                   user={user}
+                  isOwnProfile={selectedProfileId === user.id}
                   kpis={visibleKpiRows}
                   loading={loadingProfile}
                   profileName={profile?.name ?? getDisplayName(user)}
@@ -1038,7 +1090,7 @@ function App() {
                   onSubmitAchievement={handleSubmitAchievement}
                   onSubmitManagerScore={handleSubmitManagerScore}
                   onSubmitFinalScore={handleSubmitFinalScore}
-                  onUnlockEvaluation={handleUnlockEvaluation}
+                  onSubmitDirectorReview={handleSubmitDirectorReview}
                 />
               )}
               {activeView === "reviews" && (
@@ -1109,11 +1161,11 @@ function LoginScreen({
     <div className="min-h-screen bg-[#eef1f5] p-4 lg:p-6">
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-7xl overflow-hidden rounded-[36px] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)] ring-1 ring-black/5 lg:grid-cols-2">
         <section className="relative hidden min-h-[760px] overflow-hidden bg-[#0f172a] lg:block">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,#0f172a_0%,#111827_45%,#1e293b_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,#0a0a0a_0%,#171717_45%,#2b0b11_100%)]" />
           <div className="absolute inset-y-0 right-0 w-px bg-white/10" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.22),transparent_28%),radial-gradient(circle_at_80%_30%,rgba(59,130,246,0.18),transparent_24%),linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.04)_35%,transparent_70%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(193,18,31,0.24),transparent_28%),radial-gradient(circle_at_80%_30%,rgba(239,68,68,0.16),transparent_24%),linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.04)_35%,transparent_70%)]" />
           <div className="absolute left-14 top-14 h-px w-40 bg-gradient-to-r from-white/0 via-white/40 to-white/0" />
-          <div className="absolute right-20 top-28 h-px w-56 rotate-[-16deg] bg-gradient-to-r from-white/0 via-indigo-300/45 to-white/0" />
+          <div className="absolute right-20 top-28 h-px w-56 rotate-[-16deg] bg-gradient-to-r from-white/0 via-red-300/45 to-white/0" />
           <div className="absolute bottom-20 left-16 right-16">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-indigo-200">News Central</p>
             <h1 className="mt-6 max-w-md text-5xl font-bold leading-tight text-white">
@@ -1125,7 +1177,7 @@ function LoginScreen({
           </div>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex h-40 w-40 items-center justify-center rounded-[40px] border border-white/10 bg-white/5 backdrop-blur-sm shadow-[0_30px_80px_rgba(15,23,42,0.45)]">
-              <span className="text-[4.5rem] font-black tracking-tight text-white">NC</span>
+              <img src={companyLogo} alt="News Central" className="h-28 w-28 rounded-2xl object-cover" />
             </div>
           </div>
         </section>
@@ -1143,9 +1195,7 @@ function LoginScreen({
                     : "Set a new password so you can access your workspace."}
                 </p>
               </div>
-              <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-slate-900 text-lg font-black text-white">
-                NC
-              </div>
+              <BrandLogo />
             </div>
             <div className="rounded-[32px] bg-white p-8 shadow-sm ring-1 ring-black/5">
               {status && (
@@ -1275,7 +1325,9 @@ function Sidebar({
             <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-300">Appraisal</p>
-                <h1 className="text-lg font-bold text-white">News Central</h1>
+                <div className="mt-2">
+                  <img src={companyLogo} alt="News Central" className="h-11 w-11 rounded-lg object-cover" />
+                </div>
               </div>
               <button
                 className="rounded-lg border border-slate-700/70 bg-transparent p-2 text-slate-300"
@@ -1317,7 +1369,9 @@ function SidebarContent({
       <div className="p-5">
         <div className="mb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-300">Performance</p>
-          <h1 className="mt-2 text-xl font-bold text-white">News Central</h1>
+          <div className="mt-3">
+            <img src={companyLogo} alt="News Central" className="h-12 w-12 rounded-lg object-cover" />
+          </div>
         </div>
         <nav className="space-y-1">
           {roleNavItems.map((item) => {
@@ -1617,7 +1671,7 @@ function EmployeeDashboard({
                 <XAxis dataKey="month" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" />
                 <Tooltip />
-                <Line type="monotone" dataKey="performance" stroke="#4f46e5" strokeWidth={3} dot={{ r: 5 }} />
+                <Line type="monotone" dataKey="performance" stroke="#c1121f" strokeWidth={3} dot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1815,8 +1869,8 @@ function HrDashboard({
   const distributionChart = distribution
     ? [
         { name: "Needs support", value: toNumber(distribution.needs_support), color: "#ef4444" },
-        { name: "Steady", value: toNumber(distribution.steady), color: "#6366f1" },
-        { name: "High performing", value: toNumber(distribution.high_performing), color: "#22c55e" }
+        { name: "Steady", value: toNumber(distribution.steady), color: "#111827" },
+        { name: "High performing", value: toNumber(distribution.high_performing), color: "#c1121f" }
       ]
     : [];
 
@@ -1943,6 +1997,7 @@ function MetricCard({
 
 function KpiManagement({
   user,
+  isOwnProfile,
   kpiRows,
   commentHistory,
   onRowChange,
@@ -1960,6 +2015,7 @@ function KpiManagement({
   actionState
 }: {
   user: AuthUser;
+  isOwnProfile: boolean;
   kpiRows: Kpi[];
   commentHistory: CommentHistoryItem[];
   onRowChange: (id: number, field: keyof Kpi, value: string) => void;
@@ -1977,10 +2033,10 @@ function KpiManagement({
   actionState: KpiActionState;
 }) {
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
-  const canCreate = user.role === "employee" || user.role === "hr";
-  const canEdit = user.role === "employee" || user.role === "hr";
-  const canDelete = user.role === "employee" || user.role === "hr";
-  const canApprove = user.role === "manager" || user.role === "hr";
+  const canCreate = user.role === "hr" || isOwnProfile;
+  const canEdit = user.role === "hr" || isOwnProfile;
+  const canDelete = user.role === "hr" || isOwnProfile;
+  const canApprove = (user.role === "manager" || user.role === "hr") && !isOwnProfile;
   const editableKpis = kpiRows.filter((item) => item.status === "Draft" || item.status === "Rejected");
   const submittedKpis = kpiRows.filter((item) => item.status === "Submitted");
   const approvedCount = kpiRows.filter((item) => item.status === "Approved").length;
@@ -2133,6 +2189,14 @@ function KpiManagement({
                       <span className="mb-2 block font-medium text-slate-700">Goals</span>
                       <textarea value={item.description ?? ""} onChange={(event) => onRowChange(item.id, "description", event.target.value)} rows={4} disabled={!canEdit} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50" />
                     </label>
+                    <label className="text-sm">
+                      <span className="mb-2 block font-medium text-slate-700">Weight (%)</span>
+                      <input type="number" min="0" max="100" value={item.weight} onChange={(event) => onRowChange(item.id, "weight", event.target.value)} disabled={!canEdit} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50" />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-2 block font-medium text-slate-700">Target</span>
+                      <input type="number" min="0" value={item.target} onChange={(event) => onRowChange(item.id, "target", event.target.value)} disabled={!canEdit} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50" />
+                    </label>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
                     <button disabled={actionState.kind !== null} className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-70" onClick={() => void onSaveKpi(item)}>
@@ -2176,6 +2240,14 @@ function KpiManagement({
                 <label className="text-sm">
                   <span className="mb-2 block font-medium text-slate-700">Goals</span>
                   <textarea value={newKpiForm.description} onChange={(event) => onNewKpiChange({ ...newKpiForm, description: event.target.value })} rows={4} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand" />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-slate-700">Weight (%)</span>
+                  <input type="number" min="0" max="100" value={newKpiForm.weight} onChange={(event) => onNewKpiChange({ ...newKpiForm, weight: event.target.value })} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand" />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-slate-700">Target</span>
+                  <input type="number" min="0" value={newKpiForm.target} onChange={(event) => onNewKpiChange({ ...newKpiForm, target: event.target.value })} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand" />
                 </label>
                 <button disabled={actionState.kind !== null} className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70" onClick={() => void onCreateKpi()}>
                   {actionState.kind === "create" ? "Creating KPI..." : "Create KPI"}
@@ -2221,6 +2293,7 @@ function KpiManagement({
 
 function AppraisalFlow({
   user,
+  isOwnProfile,
   kpis,
   loading,
   profileName,
@@ -2231,9 +2304,10 @@ function AppraisalFlow({
   onSubmitAchievement,
   onSubmitManagerScore,
   onSubmitFinalScore,
-  onUnlockEvaluation
+  onSubmitDirectorReview
 }: {
   user: AuthUser;
+  isOwnProfile: boolean;
   kpis: Kpi[];
   loading: boolean;
   profileName: string;
@@ -2244,7 +2318,12 @@ function AppraisalFlow({
   onSubmitAchievement: (kpiId: number, selfScore: number, achievement: string) => Promise<void>;
   onSubmitManagerScore: (kpiId: number, managerScore: number) => Promise<void>;
   onSubmitFinalScore: (kpiId: number, finalScore: number) => Promise<void>;
-  onUnlockEvaluation: (appraisalId: number, unlocked: boolean) => Promise<void>;
+  onSubmitDirectorReview: (
+    appraisalId: number,
+    overallRemark: string,
+    improvementSuggestions: string,
+    trainingRecommendations: string
+  ) => Promise<void>;
 }) {
   const approvedKpis = kpis.filter((item) => item.status === "Approved");
   const [expandedKpiIds, setExpandedKpiIds] = useState<number[]>([]);
@@ -2253,6 +2332,9 @@ function AppraisalFlow({
   const [achievementInputs, setAchievementInputs] = useState<Record<number, string>>({});
   const [managerScoreInputs, setManagerScoreInputs] = useState<Record<number, string>>({});
   const [finalScoreInputs, setFinalScoreInputs] = useState<Record<number, string>>({});
+  const [directorOverallInputs, setDirectorOverallInputs] = useState<Record<number, string>>({});
+  const [directorImprovementInputs, setDirectorImprovementInputs] = useState<Record<number, string>>({});
+  const [directorTrainingInputs, setDirectorTrainingInputs] = useState<Record<number, string>>({});
   const latestEmployeeComments = new Map<number, string>();
 
   commentHistory.forEach((item) => {
@@ -2315,6 +2397,45 @@ function AppraisalFlow({
     });
   }, [approvedKpis]);
 
+  useEffect(() => {
+    setDirectorOverallInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        if (item.appraisalId) {
+          next[item.appraisalId] =
+            current[item.appraisalId] ?? item.appraisalDirectorOverallRemark ?? "";
+        }
+      });
+      return next;
+    });
+  }, [approvedKpis]);
+
+  useEffect(() => {
+    setDirectorImprovementInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        if (item.appraisalId) {
+          next[item.appraisalId] =
+            current[item.appraisalId] ?? item.appraisalDirectorImprovementSuggestions ?? "";
+        }
+      });
+      return next;
+    });
+  }, [approvedKpis]);
+
+  useEffect(() => {
+    setDirectorTrainingInputs((current) => {
+      const next: Record<number, string> = {};
+      approvedKpis.forEach((item) => {
+        if (item.appraisalId) {
+          next[item.appraisalId] =
+            current[item.appraisalId] ?? item.appraisalDirectorTrainingRecommendations ?? "";
+        }
+      });
+      return next;
+    });
+  }, [approvedKpis]);
+
   const buildReviewDate = (value?: string) => {
     if (!value) return null;
     const date = new Date(value);
@@ -2323,8 +2444,7 @@ function AppraisalFlow({
     return date;
   };
 
-  const lockedFinalReviews = approvedKpis.filter((item) => !item.appraisalEvaluationUnlockedByHr).length;
-  const scoredByManager = approvedKpis.filter((item) => item.managerScore !== undefined).length;
+  const lockedFinalReviews = approvedKpis.filter((item) => !isReviewDateOpen(item.appraisalReviewDate)).length;
   const completedReviewStage = approvedKpis.filter((item) => item.selfScore !== undefined).length;
 
   const toggleKpiDetails = (kpiId: number) => {
@@ -2339,7 +2459,7 @@ function AppraisalFlow({
         <MetricCard title="Approved KPIs" value={String(approvedKpis.length)} note={`Manager-approved KPIs for ${profileName}`} tone="slate" />
         <MetricCard title="Target Scores" value={String(approvedKpis.filter((item) => item.targetSelfScore !== undefined).length)} note="Initial employee target scores already recorded" tone="amber" />
         <MetricCard title="Review Stage Done" value={String(completedReviewStage)} note="Employee review stage completed" tone="indigo" />
-        <MetricCard title="Locked" value={String(lockedFinalReviews)} note="KPIs still waiting to be opened by HR" tone="green" />
+        <MetricCard title="Closed" value={String(lockedFinalReviews)} note="Appraisals past their review date" tone="green" />
       </div>
 
       {feedback && (
@@ -2358,7 +2478,7 @@ function AppraisalFlow({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h3 className="text-xl font-semibold text-slate-900">Appraisal register</h3>
-            <p className="text-sm text-slate-500">A clean view of every approved KPI and whether it is opened or locked for appraisal.</p>
+            <p className="text-sm text-slate-500">A cleaner appraisal view built around the review date, scoring progress, and final director feedback.</p>
           </div>
           <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
             Select a row to work on the appraisal details below.
@@ -2373,19 +2493,18 @@ function AppraisalFlow({
                   <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     <th className="px-4 py-4">KPI</th>
                     <th className="px-4 py-4">Cycle</th>
+                    <th className="px-4 py-4">Review date</th>
                     <th className="px-4 py-4">State</th>
                     <th className="px-4 py-4">Target score</th>
                     <th className="px-4 py-4">Review stage</th>
                     <th className="px-4 py-4">Manager</th>
                     <th className="px-4 py-4">Final</th>
-                    {user.role === "hr" ? <th className="px-4 py-4">Action</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {approvedKpis.map((item) => {
                     const isExpanded = expandedKpiIds.includes(item.id);
-                    const evaluationUnlocked = Boolean(item.appraisalEvaluationUnlockedByHr);
-                    const canHrToggle = user.role === "hr" && Boolean(item.appraisalId);
+                    const reviewOpen = isReviewDateOpen(item.appraisalReviewDate);
 
                     return (
                       <tr
@@ -2406,14 +2525,15 @@ function AppraisalFlow({
                           </div>
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">{item.appraisalPeriod || "--"}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{item.appraisalReviewDate ? new Date(item.appraisalReviewDate).toLocaleDateString() : "--"}</td>
                         <td className="px-4 py-4 text-sm">
-                          <LockStateBadge opened={evaluationUnlocked} />
+                          <LockStateBadge opened={reviewOpen} />
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Pending"}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
-                          {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : evaluationUnlocked ? "Awaiting employee" : "Locked"}
+                          {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : reviewOpen ? "Awaiting employee" : "Closed"}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : item.selfScore !== undefined ? "Pending" : "Locked"}
@@ -2421,29 +2541,6 @@ function AppraisalFlow({
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : item.managerScore !== undefined ? "Pending" : "Locked"}
                         </td>
-                        {user.role === "hr" ? (
-                          <td className="px-4 py-4 text-sm">
-                            {canHrToggle && (
-                              <button
-                                type="button"
-                                disabled={actionState.kind !== null}
-                                className={`rounded-xl px-3 py-2 text-xs font-semibold ${
-                                  evaluationUnlocked ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white"
-                                }`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void onUnlockEvaluation(item.appraisalId!, !evaluationUnlocked);
-                                }}
-                              >
-                                {actionState.kind === "unlock" && actionState.kpiId === item.appraisalId
-                                  ? "Saving..."
-                                  : evaluationUnlocked
-                                    ? "Lock"
-                                    : "Open"}
-                              </button>
-                            )}
-                          </td>
-                        ) : null}
                       </tr>
                     );
                   })}
@@ -2460,24 +2557,33 @@ function AppraisalFlow({
         {approvedKpis.map((item) => {
           if (!expandedKpiIds.includes(item.id)) return null;
 
-          const itemReviewDate = buildReviewDate(item.appraisalCreatedAt);
-          const evaluationUnlocked = Boolean(item.appraisalEvaluationUnlockedByHr);
+          const itemReviewDate = item.appraisalReviewDate ? new Date(item.appraisalReviewDate) : buildReviewDate(item.appraisalCreatedAt);
+          const reviewOpen = isReviewDateOpen(item.appraisalReviewDate);
           const employeeAchievement = latestEmployeeComments.get(item.id) ?? "";
-          const canEmployeeSetTargetScore = user.role === "employee" && item.targetSelfScore === undefined;
+          const canEmployeeSetTargetScore = isOwnProfile && item.targetSelfScore === undefined && reviewOpen;
           const canEmployeeAddAchievement =
-            user.role === "employee" &&
+            isOwnProfile &&
             item.targetSelfScore !== undefined &&
             item.selfScore === undefined &&
-            evaluationUnlocked;
+            reviewOpen;
           const canManagerScore =
             (user.role === "manager" || user.role === "hr") &&
-            evaluationUnlocked &&
+            !isOwnProfile &&
+            reviewOpen &&
             item.selfScore !== undefined;
+          const canDirectorReview =
+            user.role === "hr" &&
+            !isOwnProfile &&
+            Boolean(item.appraisalId) &&
+            approvedKpis.filter((kpi) => kpi.appraisalId === item.appraisalId).every((kpi) => kpi.finalScore !== undefined);
           const targetScoreInput = targetScoreInputs[item.id] ?? "";
           const reviewSelfScoreInput = reviewSelfScoreInputs[item.id] ?? "";
           const achievementInput = achievementInputs[item.id] ?? "";
           const managerScoreInput = managerScoreInputs[item.id] ?? "";
           const finalScoreInput = finalScoreInputs[item.id] ?? "";
+          const directorOverallInput = item.appraisalId ? directorOverallInputs[item.appraisalId] ?? "" : "";
+          const directorImprovementInput = item.appraisalId ? directorImprovementInputs[item.appraisalId] ?? "" : "";
+          const directorTrainingInput = item.appraisalId ? directorTrainingInputs[item.appraisalId] ?? "" : "";
 
           return (
             <section key={item.id} className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
@@ -2489,7 +2595,8 @@ function AppraisalFlow({
                 </div>
                 <div className="grid grid-cols-2 gap-3 lg:min-w-[340px]">
                   <SnapshotRow label="Cycle" value={item.appraisalPeriod || "--"} />
-                  <SnapshotRow label="State" value={evaluationUnlocked ? "Opened" : "Locked"} />
+                  <SnapshotRow label="Review date" value={itemReviewDate ? itemReviewDate.toLocaleDateString() : "--"} />
+                  <SnapshotRow label="State" value={reviewOpen ? "Opened" : "Locked"} />
                   <SnapshotRow label="Target self-score" value={item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Pending"} />
                   <SnapshotRow label="Review self-score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Pending"} />
                 </div>
@@ -2535,11 +2642,11 @@ function AppraisalFlow({
                   )}
 
                   <div className="mt-5 border-t border-slate-100 pt-5">
-                    <p className="text-base font-semibold text-slate-900">Three-month review stage</p>
+                    <p className="text-base font-semibold text-slate-900">Review stage</p>
                     <p className="mt-2 text-sm text-slate-500">
                       {itemReviewDate
-                        ? `Planned review date: ${itemReviewDate.toLocaleDateString()}.`
-                        : "This stage opens only when HR allows it."}
+                        ? `Review date: ${itemReviewDate.toLocaleDateString()}. This appraisal remains open until the end of that day.`
+                        : "This appraisal remains open until a review date is set."}
                     </p>
 
                     {canEmployeeAddAchievement ? (
@@ -2592,9 +2699,9 @@ function AppraisalFlow({
                           : employeeAchievement
                             ? employeeAchievement
                             : item.targetSelfScore !== undefined
-                              ? evaluationUnlocked
+                              ? reviewOpen
                                 ? "The employee can now complete the review stage."
-                                : "This KPI is currently locked."
+                                : "This appraisal is now closed because the review date has passed."
                               : "The employee must set the initial target self-score before this stage can continue."}
                       </div>
                     )}
@@ -2663,11 +2770,44 @@ function AppraisalFlow({
                     </div>
                   ) : (
                     <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      {!evaluationUnlocked
-                        ? "This KPI is locked, so manager scoring is not available yet."
+                      {!reviewOpen
+                        ? "This appraisal is closed because the review date has passed."
                         : item.selfScore === undefined
                           ? "Waiting for the employee to complete the review stage before manager scoring can continue."
                           : "Manager scoring will appear here when the record is ready."}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-base font-semibold text-slate-900">Director review</p>
+                  {canDirectorReview ? (
+                    <div className="mt-4 space-y-3">
+                      <label className="block text-sm">
+                        <span className="mb-2 block font-medium text-slate-700">Overall remark</span>
+                        <textarea rows={3} value={directorOverallInput} onChange={(event) => item.appraisalId && setDirectorOverallInputs((current) => ({ ...current, [item.appraisalId!]: event.target.value }))} className="w-full rounded-2xl border border-neutral-200 px-4 py-3" />
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-2 block font-medium text-slate-700">Suggestions for improvement</span>
+                        <textarea rows={3} value={directorImprovementInput} onChange={(event) => item.appraisalId && setDirectorImprovementInputs((current) => ({ ...current, [item.appraisalId!]: event.target.value }))} className="w-full rounded-2xl border border-neutral-200 px-4 py-3" />
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-2 block font-medium text-slate-700">Recommended training / improvement initiatives</span>
+                        <textarea rows={3} value={directorTrainingInput} onChange={(event) => item.appraisalId && setDirectorTrainingInputs((current) => ({ ...current, [item.appraisalId!]: event.target.value }))} className="w-full rounded-2xl border border-neutral-200 px-4 py-3" />
+                      </label>
+                      <button
+                        disabled={actionState.kind !== null || !item.appraisalId || directorOverallInput.trim() === ""}
+                        className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                        onClick={() => item.appraisalId && void onSubmitDirectorReview(item.appraisalId, directorOverallInput, directorImprovementInput, directorTrainingInput)}
+                      >
+                        {actionState.kind === "directorReview" && actionState.kpiId === item.appraisalId ? "Saving..." : "Save director review"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-3 text-sm text-slate-600">
+                      <p>{item.appraisalDirectorOverallRemark || "Director overall remark will appear here after final scoring is completed."}</p>
+                      {item.appraisalDirectorImprovementSuggestions ? <p>Improvement: {item.appraisalDirectorImprovementSuggestions}</p> : null}
+                      {item.appraisalDirectorTrainingRecommendations ? <p>Training: {item.appraisalDirectorTrainingRecommendations}</p> : null}
                     </div>
                   )}
                 </div>
@@ -2853,7 +2993,7 @@ function RoleWorkspaceBanner({
           title: activeView === "settings" ? "Organization control room" : "HR control room",
           body:
             activeView === "appraisals"
-              ? `Open or lock appraisal stages and monitor progress for ${profileName}.`
+              ? `Monitor appraisal progress for ${profileName}, keep review dates on track, and capture final director feedback.`
               : activeView === "reviews"
                 ? "Review employee progress, approval queues, and organizational readiness from one place."
                 : "Manage the appraisal cycle, staff records, and reporting controls.",
@@ -2865,7 +3005,7 @@ function RoleWorkspaceBanner({
             title: activeView === "reviews" ? "Team review desk" : "Manager operating desk",
             body:
               activeView === "appraisals"
-                ? `Track scoring progress for ${profileName} and move approved appraisals toward manager review.`
+                ? `Track scoring progress for ${profileName} and complete manager review before the appraisal review date closes.`
                 : activeView === "reviews"
                   ? "Focus on submitted KPIs, approvals, and review readiness across your team."
                   : "Work through team performance, approvals, and reporting with a manager-first view.",
@@ -2876,7 +3016,7 @@ function RoleWorkspaceBanner({
             title: "Personal appraisal workspace",
             body:
               activeView === "appraisals"
-                ? "Track your target score and complete each appraisal stage when it is opened."
+                ? "Track your target score, complete each appraisal stage before the review date, and follow final feedback clearly."
                 : "Manage your KPIs, performance records, and reports from your personal workspace.",
             tone: "border border-slate-200 bg-white"
           };
@@ -3085,7 +3225,7 @@ function Reports({
             <td>${item.period}</td>
             <td>${item.title}</td>
             <td>${item.status}</td>
-            <td>${item.final_score ?? "--"}</td>
+            <td>${item.final_score !== null ? `${toScorePercent(item.final_score)}%` : "--"}</td>
             <td>${item.variance}</td>
           </tr>
         `
@@ -3113,7 +3253,7 @@ function Reports({
           <h1>News Central Performance Report</h1>
           <p class="meta">${reportTitle}${selectedPeriod !== "all" ? ` | ${selectedPeriod}` : ""}</p>
           <div class="grid">
-            <div class="card"><div class="label">Average final score</div><div class="value">${userReport ? toNumber(userReport.summary.average_final_score).toFixed(1) : "0.0"}</div></div>
+            <div class="card"><div class="label">Average final score</div><div class="value">${userReport ? toNumber(userReport.summary.average_final_score).toFixed(1) : "0.0"}%</div></div>
             <div class="card"><div class="label">KPI achievement</div><div class="value">${userReport ? toNumber(userReport.summary.achievement_rate).toFixed(1) : "0.0"}%</div></div>
             <div class="card"><div class="label">Score variance</div><div class="value">${userReport ? toNumber(userReport.summary.score_variance).toFixed(1) : "0.0"}</div></div>
             <div class="card"><div class="label">Completion rate</div><div class="value">${userReport ? ((toNumber(userReport.summary.completed_appraisals) / Math.max(toNumber(userReport.summary.appraisal_count), 1)) * 100).toFixed(1) : "0.0"}%</div></div>
@@ -3208,7 +3348,7 @@ function Reports({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Average final score"
-          value={userReport ? toNumber(userReport.summary.average_final_score).toFixed(1) : dashboard ? toNumber(getDashboardAverageScore(dashboard.summary)).toFixed(1) : "0.0"}
+          value={`${userReport ? toNumber(userReport.summary.average_final_score).toFixed(1) : dashboard ? toNumber(getDashboardAverageScore(dashboard.summary)).toFixed(1) : "0.0"}%`}
           note="Live from submitted reviews"
           tone="indigo"
         />
@@ -3244,8 +3384,8 @@ function Reports({
                 <YAxis stroke="#94a3b8" />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="score" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="completion" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="score" fill="#c1121f" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="completion" fill="#111827" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -3259,7 +3399,7 @@ function Reports({
                 <XAxis dataKey="month" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" />
                 <Tooltip />
-                <Line type="monotone" dataKey="performance" stroke="#0f172a" strokeWidth={3} dot={{ r: 5 }} />
+                <Line type="monotone" dataKey="performance" stroke="#c1121f" strokeWidth={3} dot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -3285,7 +3425,7 @@ function Reports({
                     <td className="px-4 py-4 text-slate-600">{item.period}</td>
                     <td className="px-4 py-4 font-medium text-slate-900">{item.title}</td>
                     <td className="px-4 py-4 text-slate-600 capitalize">{item.status}</td>
-                    <td className="px-4 py-4 text-slate-600">{item.final_score ?? "--"}</td>
+                    <td className="px-4 py-4 text-slate-600">{item.final_score !== null ? `${toScorePercent(item.final_score)}%` : "--"}</td>
                     <td className="px-4 py-4 text-slate-600">{item.variance}</td>
                   </tr>
                 ))}
@@ -3311,7 +3451,7 @@ function Reports({
                     </div>
                     <div className="mt-2 flex items-center justify-between text-sm text-slate-500">
                       <span>{(item as DepartmentReportResponse["employees"][number]).period}</span>
-                      <span>Avg {(item as DepartmentReportResponse["employees"][number]).average_score}</span>
+                      <span>Avg {(item as DepartmentReportResponse["employees"][number]).average_score}%</span>
                     </div>
                   </>
                 ) : (
@@ -3322,7 +3462,7 @@ function Reports({
                     </div>
                     <div className="mt-2 flex items-center justify-between text-sm text-slate-500">
                       <span>{(item as UserReportResponse["periods"][number]).kpi_count} KPIs</span>
-                      <span>Avg {(item as UserReportResponse["periods"][number]).average_score}</span>
+                      <span>Avg {(item as UserReportResponse["periods"][number]).average_score}%</span>
                     </div>
                   </>
                 )}
@@ -3740,14 +3880,14 @@ function SettingsPanel({
               {(form.role === "employee" || form.role === "manager") && (
                 <label className="text-sm">
                   <span className="mb-2 block font-medium text-slate-700">
-                    {form.role === "manager" ? "Managing director" : "Reporting manager"}
+                    {form.role === "manager" ? "Director / supervisor" : "Line manager"}
                   </span>
                   <select
                     value={form.managerId}
                     onChange={(event) => setForm((current) => ({ ...current, managerId: event.target.value }))}
                     className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
                   >
-                    <option value="">{form.role === "manager" ? "Select managing director" : "Select manager"}</option>
+                    <option value="">{form.role === "manager" ? "Select director / supervisor" : "Select line manager"}</option>
                     {(form.role === "manager" ? reportingLeaders : managers).map((manager) => (
                       <option key={manager.id} value={manager.id}>
                         {getDisplayNameFromStaff(manager)}

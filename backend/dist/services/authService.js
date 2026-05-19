@@ -91,6 +91,7 @@ export async function loginUser(email, password) {
     }
     const authUser = {
         id: user.id,
+        name: user.name,
         email: user.email,
         role: user.role,
         departmentId: user.department_id

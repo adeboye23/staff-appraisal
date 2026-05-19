@@ -1,13 +1,17 @@
 import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { finalScoreSchema, managerScoreSchema, performanceSchema, selfAppraisalSchema, signOffSchema, unlockEvaluationSchema } from "../validators/performance.js";
-import { ensureKpiExists, getPerformanceByKpi, requirePerformanceForFinal, ensureAppraisalMutable, requireEvaluationStageOpen, getAppraisalById } from "../services/appraisalService.js";
+import { directorReviewSchema, finalScoreSchema, managerScoreSchema, performanceSchema, selfAppraisalSchema, signOffSchema, unlockEvaluationSchema } from "../validators/performance.js";
+import { ensureAppraisalWithinReviewDate, ensureKpiExists, getPerformanceByKpi, requirePerformanceForFinal, ensureAppraisalMutable, getAppraisalById, requireAppraisalReadyForDirector } from "../services/appraisalService.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 export const createPerformance = asyncHandler(async (req, res) => {
     const data = performanceSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
+    if (req.user?.role !== "hr" && req.user?.id !== kpi.user_id) {
+        throw new ApiError(403, "You can only update performance details for your own appraisal.");
+    }
     await ensureAppraisalMutable(kpi.appraisal_id);
+    await ensureAppraisalWithinReviewDate(kpi.appraisal_id);
     const existing = await getPerformanceByKpi(data.kpiId);
     const result = existing
         ? await query(`
@@ -89,7 +93,11 @@ export const getComments = asyncHandler(async (req, res) => {
 export const selfAppraisal = asyncHandler(async (req, res) => {
     const data = selfAppraisalSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
+    if (req.user?.role !== "hr" && req.user?.id !== kpi.user_id) {
+        throw new ApiError(403, "You can only complete self-appraisal for your own record.");
+    }
     await ensureAppraisalMutable(kpi.appraisal_id);
+    await ensureAppraisalWithinReviewDate(kpi.appraisal_id);
     if (kpi.status !== "approved") {
         throw new ApiError(400, "This KPI must be approved before it can move through appraisal scoring.");
     }
@@ -119,7 +127,6 @@ export const selfAppraisal = asyncHandler(async (req, res) => {
         res.status(performance ? 200 : 201).json({ performance: result.rows[0] });
         return;
     }
-    await requireEvaluationStageOpen(kpi.appraisal_id);
     if (performance.self_score !== null && performance.self_score !== undefined) {
         throw new ApiError(409, "The post-review self-score is locked once it has been submitted.");
     }
@@ -144,8 +151,11 @@ export const selfAppraisal = asyncHandler(async (req, res) => {
 export const managerScore = asyncHandler(async (req, res) => {
     const data = managerScoreSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
+    if (req.user?.role === "manager" && req.user.id === kpi.user_id) {
+        throw new ApiError(403, "Managers cannot score their own appraisal record.");
+    }
     await ensureAppraisalMutable(kpi.appraisal_id);
-    await requireEvaluationStageOpen(kpi.appraisal_id);
+    await ensureAppraisalWithinReviewDate(kpi.appraisal_id);
     const performance = await getPerformanceByKpi(data.kpiId);
     if (!performance || performance.target_self_score === null || performance.target_self_score === undefined) {
         throw new ApiError(400, "Employee target score must be recorded before manager scoring");
@@ -176,8 +186,11 @@ export const managerScore = asyncHandler(async (req, res) => {
 export const finalScore = asyncHandler(async (req, res) => {
     const data = finalScoreSchema.parse(req.body);
     const kpi = await ensureKpiExists(data.kpiId);
+    if (req.user?.role === "manager" && req.user.id === kpi.user_id) {
+        throw new ApiError(403, "Managers cannot finalize their own appraisal record.");
+    }
     await ensureAppraisalMutable(kpi.appraisal_id);
-    await requireEvaluationStageOpen(kpi.appraisal_id);
+    await ensureAppraisalWithinReviewDate(kpi.appraisal_id);
     if (!data.agree) {
         throw new ApiError(400, "Agreement checkbox must be confirmed");
     }
@@ -195,6 +208,31 @@ export const finalScore = asyncHandler(async (req, res) => {
         entityId: performance.id
     });
     res.json({ performance: result.rows[0] });
+});
+export const directorReview = asyncHandler(async (req, res) => {
+    const data = directorReviewSchema.parse(req.body);
+    const appraisal = await requireAppraisalReadyForDirector(data.appraisalId);
+    const result = await query(`
+      UPDATE appraisals
+      SET director_overall_remark = $2,
+          director_improvement_suggestions = $3,
+          director_training_recommendations = $4,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `, [
+        appraisal.id,
+        data.overallRemark.trim(),
+        data.improvementSuggestions?.trim() ?? null,
+        data.trainingRecommendations?.trim() ?? null
+    ]);
+    await logAudit({
+        actorUserId: req.user?.id ?? null,
+        action: "appraisal.director_review",
+        entityType: "appraisal",
+        entityId: appraisal.id
+    });
+    res.json({ appraisal: result.rows[0] });
 });
 export const unlockEvaluation = asyncHandler(async (req, res) => {
     const data = unlockEvaluationSchema.parse(req.body);

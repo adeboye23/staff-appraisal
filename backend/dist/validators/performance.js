@@ -18,6 +18,12 @@ export const finalScoreSchema = z.object({
     finalScore: z.number().min(1).max(5),
     agree: z.boolean()
 });
+export const directorReviewSchema = z.object({
+    appraisalId: z.number().int().positive(),
+    overallRemark: z.string().min(2),
+    improvementSuggestions: z.string().min(2).optional(),
+    trainingRecommendations: z.string().min(2).optional()
+});
 export const signOffSchema = z.object({
     appraisalId: z.number().int().positive(),
     actor: z.enum(["employee", "manager"])

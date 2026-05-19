@@ -9,6 +9,7 @@ export type Role = "employee" | "manager" | "hr";
 
 export type AuthUser = {
   id: number;
+  name: string;
   email: string;
   role: Role;
   departmentId: number | null;
@@ -25,8 +26,12 @@ export type Kpi = {
   appraisalPeriod?: string;
   appraisalStatus?: "draft" | "in_review" | "completed";
   appraisalCreatedAt?: string;
+  appraisalReviewDate?: string | null;
   appraisalEvaluationUnlockedByHr?: boolean;
   appraisalEvaluationUnlockedAt?: string | null;
+  appraisalDirectorOverallRemark?: string | null;
+  appraisalDirectorImprovementSuggestions?: string | null;
+  appraisalDirectorTrainingRecommendations?: string | null;
   employeeSigned?: boolean;
   managerSigned?: boolean;
   employeeSignedAt?: string | null;

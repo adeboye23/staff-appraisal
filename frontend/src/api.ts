@@ -67,8 +67,12 @@ export function getUserKpis(userId: number, token: string) {
       appraisal_period?: string;
       appraisal_status?: "draft" | "in_review" | "completed";
       appraisal_created_at?: string;
+      appraisal_review_date?: string | null;
       appraisal_evaluation_unlocked_by_hr?: boolean;
       appraisal_evaluation_unlocked_at?: string | null;
+      appraisal_director_overall_remark?: string | null;
+      appraisal_director_improvement_suggestions?: string | null;
+      appraisal_director_training_recommendations?: string | null;
       employee_signed?: boolean;
       manager_signed?: boolean;
       employee_signed_at?: string | null;
@@ -134,6 +138,22 @@ export function submitFinalScore(
 ) {
   return request<{ performance: unknown }>(
     "/performance/final-score",
+    { method: "POST", body: JSON.stringify(payload) },
+    token
+  );
+}
+
+export function submitDirectorReview(
+  token: string,
+  payload: {
+    appraisalId: number;
+    overallRemark: string;
+    improvementSuggestions?: string;
+    trainingRecommendations?: string;
+  }
+) {
+  return request<{ appraisal: unknown }>(
+    "/performance/director-review",
     { method: "POST", body: JSON.stringify(payload) },
     token
   );

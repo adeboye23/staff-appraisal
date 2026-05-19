@@ -2,16 +2,20 @@ import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { createKpiSchema, updateKpiSchema, approveKpiSchema } from "../validators/kpi.js";
 import { ApiError } from "../utils/ApiError.js";
-import { ensureAdditionalKpiCapacity, ensureKpiEditable, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
+import { ensureAdditionalKpiCapacity, ensureAppraisalWithinReviewDate, ensureKpiEditable, ensureKpiExists, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
 import { logAudit } from "../utils/audit.js";
 export const createKpi = asyncHandler(async (req, res) => {
     const data = createKpiSchema.parse(req.body);
+    if (req.user?.role !== "hr" && req.user?.id !== data.userId) {
+        throw new ApiError(403, "You can only create KPIs for your own account.");
+    }
     const appraisal = data.appraisalId
         ? { id: data.appraisalId }
         : data.period
             ? await getOrCreateAppraisal(data.userId, data.period)
             : await getOrCreateActiveAppraisal(data.userId);
     await ensureAdditionalKpiCapacity(appraisal.id, data.userId);
+    await ensureAppraisalWithinReviewDate(appraisal.id, "You cannot add KPIs after the review date.");
     const result = await query(`
       INSERT INTO kpis (appraisal_id, user_id, title, description, weight, target, status)
       VALUES ($1, $2, $3, $4, $5, $6, 'draft')
@@ -36,8 +40,12 @@ export const getUserKpis = asyncHandler(async (req, res) => {
         a.period AS appraisal_period,
         a.status AS appraisal_status,
         a.created_at AS appraisal_created_at,
+        a.review_date AS appraisal_review_date,
         a.evaluation_unlocked_by_hr AS appraisal_evaluation_unlocked_by_hr,
         a.evaluation_unlocked_at AS appraisal_evaluation_unlocked_at,
+        a.director_overall_remark AS appraisal_director_overall_remark,
+        a.director_improvement_suggestions AS appraisal_director_improvement_suggestions,
+        a.director_training_recommendations AS appraisal_director_training_recommendations,
         a.employee_signed,
         a.manager_signed,
         a.employee_signed_at,
@@ -53,7 +61,10 @@ export const getUserKpis = asyncHandler(async (req, res) => {
 export const updateKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const data = updateKpiSchema.parse(req.body);
-    await ensureKpiEditable(kpiId);
+    const existing = await ensureKpiEditable(kpiId);
+    if (req.user?.role !== "hr" && req.user?.id !== existing.user_id) {
+        throw new ApiError(403, "You can only update your own KPIs.");
+    }
     const result = await query(`
       UPDATE kpis
       SET title = COALESCE($1, title),
@@ -75,7 +86,10 @@ export const updateKpi = asyncHandler(async (req, res) => {
 });
 export const deleteKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
-    await ensureKpiEditable(kpiId);
+    const existing = await ensureKpiEditable(kpiId);
+    if (req.user?.role !== "hr" && req.user?.id !== existing.user_id) {
+        throw new ApiError(403, "You can only delete your own KPIs.");
+    }
     const result = await query("DELETE FROM kpis WHERE id = $1 RETURNING id", [kpiId]);
     if (!result.rowCount) {
         throw new ApiError(404, "KPI not found");
@@ -91,7 +105,8 @@ export const deleteKpi = asyncHandler(async (req, res) => {
 export const approveKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const data = approveKpiSchema.parse(req.body);
-    await ensureKpiEditable(kpiId);
+    const existing = await ensureKpiExists(kpiId);
+    await ensureAppraisalWithinReviewDate(existing.appraisal_id, "You cannot change KPI approval after the review date.");
     if (data.status === "rejected" && !data.comment?.trim()) {
         throw new ApiError(400, "Manager feedback is required when returning a KPI for adjustment.");
     }

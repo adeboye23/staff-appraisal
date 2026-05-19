@@ -3,9 +3,9 @@ import { approveKpi, createKpi, deleteKpi, getUserKpis, updateKpi } from "../con
 import { requireAuth, requireRole } from "../middleware/auth.js";
 const router = Router();
 router.use(requireAuth);
-router.post("/", requireRole("employee", "hr"), createKpi);
+router.post("/", requireRole("employee", "manager", "hr"), createKpi);
 router.get("/user/:id", getUserKpis);
 router.put("/:id", requireRole("employee", "manager", "hr"), updateKpi);
-router.delete("/:id", requireRole("employee", "hr"), deleteKpi);
+router.delete("/:id", requireRole("employee", "manager", "hr"), deleteKpi);
 router.patch("/:id/approve", requireRole("manager", "hr"), approveKpi);
 export default router;

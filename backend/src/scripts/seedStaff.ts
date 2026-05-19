@@ -12,103 +12,114 @@ type SeedUser = {
 };
 
 const departments = [
-  "Human Resources",
+  "News",
+  "Programs",
   "Digital",
-  "Programmes",
-  "Entertainment",
-  "Sports",
-  "Business",
-  "Technical",
-  "Operations & Support Services"
+  "Creative",
+  "Broadcast and Transmissions",
+  "Commercial and Communications",
+  "Corporate Services",
+  "Finance",
+  "HR"
 ];
 
-const seedUsers: SeedUser[] = [
+const hrUsers: SeedUser[] = [
   {
     name: "Obehi NC",
     email: "obehi@newscentral.com",
     role: "hr",
-    department: "Human Resources",
+    department: "HR",
     previousEmail: "hr@newscentral.com"
   },
   {
     name: "Amina NC",
     email: "amina@newscentral.com",
     role: "hr",
-    department: "Human Resources"
+    department: "HR"
   },
   {
     name: "Nkechi NC",
     email: "nkechi@newscentral.com",
     role: "hr",
-    department: "Human Resources"
-  },
+    department: "HR"
+  }
+];
+
+const lineManagerNames = Array.from(
+  new Set([
+    "Sylvester Obieze",
+    "Alli Oluwaseyi",
+    "John Agbehi",
+    "Shola Akintayo",
+    "Emmanuel Erondu",
+    "Moses Azumah",
+    "Mathew Bewell",
+    "Bernard Akede",
+    "Nasir Agbalaya",
+    "Godwin Dimoriaku",
+    "Chinomso Sunday",
+    "Chidinma Ubani",
+    "Ololade Adenusi",
+    "Mariam Adegbite-Azee",
+    "Uyi Amadin",
+    "Olusegun Osibowale",
+    "Babatunde Koiki",
+    "NneotaObase Egbe",
+    "Bernard Nwosu",
+    "Mark Befe",
+    "Donald Saola",
+    "Ebibote Twingle Okiy",
+    "Olasunkanmi Ajao",
+    "Tolulope Ade-Balogun",
+    "Kathleen Ndongmo",
+    "Omolara Ayo-Tobun",
+    "Kayode Akintemi"
+  ])
+);
+
+function toEmail(name: string) {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+
+  return `${base}@newscentral.com`;
+}
+
+const seededManagers: SeedUser[] = lineManagerNames.map((name, index) => ({
+  name,
+  email: toEmail(name),
+  role: "manager",
+  department: departments[index % departments.length]
+}));
+
+const seededEmployees: SeedUser[] = [
   {
-    name: "Donald NC",
-    email: "donald@newscentral.com",
-    role: "manager",
-    department: "Technical",
-    previousEmail: "manager@newscentral.com"
-  },
-  {
-    name: "Katleen NC",
-    email: "katleen@newscentral.com",
-    role: "manager",
-    department: "Digital"
-  },
-  {
-    name: "Tolu NC",
-    email: "tolu@newscentral.com",
-    role: "manager",
-    department: "Entertainment"
-  },
-  {
-    name: "Bamidele NC",
-    email: "bamidele@newscentral.com",
-    role: "manager",
-    department: "Programmes"
-  },
-  {
-    name: "Chinedu NC",
-    email: "chinedu@newscentral.com",
-    role: "manager",
-    department: "Sports"
-  },
-  {
-    name: "Kemi NC",
-    email: "kemi@newscentral.com",
-    role: "manager",
-    department: "Business"
-  },
-  {
-    name: "Omolara NC",
-    email: "omolara@newscentral.com",
-    role: "manager",
-    department: "Operations & Support Services"
-  },
-  {
-    name: "Emmanuel NC",
-    email: "emmanuel@newscentral.com",
+    name: "Emmanuel Erondu Analyst",
+    email: "emmanuel.erondu.analyst@newscentral.com",
     role: "employee",
-    department: "Technical",
-    managerEmail: "donald@newscentral.com",
-    previousEmail: "tolu@newscentral.com"
+    department: "Broadcast and Transmissions",
+    managerEmail: toEmail("Emmanuel Erondu"),
+    previousEmail: "emmanuel@newscentral.com"
   },
   {
-    name: "Motun NC",
+    name: "Motun Digital",
     email: "motun@newscentral.com",
     role: "employee",
     department: "Digital",
-    managerEmail: "katleen@newscentral.com",
+    managerEmail: toEmail("Kathleen Ndongmo"),
     previousEmail: "maya@newscentral.com"
   },
   {
-    name: "Tomisin NC",
+    name: "Tomisin Corporate",
     email: "tomisin@newscentral.com",
     role: "employee",
-    department: "Operations & Support Services",
-    managerEmail: "omolara@newscentral.com"
+    department: "Corporate Services",
+    managerEmail: toEmail("Omolara Ayo-Tobun")
   }
 ];
+
+const seedUsers: SeedUser[] = [...hrUsers, ...seededManagers, ...seededEmployees];
 
 async function ensureDepartments() {
   for (const name of departments) {
@@ -153,7 +164,7 @@ async function ensureUsers() {
     );
   }
 
-  for (const user of seedUsers.filter((item) => item.role === "employee" && item.managerEmail)) {
+  for (const user of seedUsers.filter((item) => item.managerEmail)) {
     await query(
       `
         UPDATE users

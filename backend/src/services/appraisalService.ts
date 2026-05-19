@@ -27,10 +27,14 @@ type AppraisalRow = {
   user_id: number;
   period?: string;
   status: "draft" | "in_review" | "completed";
+  review_date?: string | null;
   employee_signed: boolean;
   manager_signed: boolean;
   evaluation_unlocked_by_hr?: boolean;
   evaluation_unlocked_at?: string | null;
+  director_overall_remark?: string | null;
+  director_improvement_suggestions?: string | null;
+  director_training_recommendations?: string | null;
   created_at: string;
 };
 
@@ -65,6 +69,30 @@ export async function ensureAppraisalWorkflowColumns() {
       ADD COLUMN IF NOT EXISTS evaluation_unlocked_at TIMESTAMP
     `
   );
+  await query(
+    `
+      ALTER TABLE appraisals
+      ADD COLUMN IF NOT EXISTS review_date DATE
+    `
+  );
+  await query(
+    `
+      ALTER TABLE appraisals
+      ADD COLUMN IF NOT EXISTS director_overall_remark TEXT
+    `
+  );
+  await query(
+    `
+      ALTER TABLE appraisals
+      ADD COLUMN IF NOT EXISTS director_improvement_suggestions TEXT
+    `
+  );
+  await query(
+    `
+      ALTER TABLE appraisals
+      ADD COLUMN IF NOT EXISTS director_training_recommendations TEXT
+    `
+  );
 }
 
 export async function ensureKpiEditable(kpiId: number) {
@@ -77,6 +105,7 @@ export async function ensureKpiEditable(kpiId: number) {
     throw new ApiError(409, "Approved KPIs are locked");
   }
   await ensureAppraisalMutable(kpi.appraisal_id);
+  await ensureAppraisalWithinReviewDate(kpi.appraisal_id, "This appraisal is closed because the review date has passed.");
   return kpi;
 }
 
@@ -101,23 +130,38 @@ export async function ensureAppraisalMutable(appraisalId: number) {
   return appraisal;
 }
 
-export async function getOrCreateAppraisal(userId: number, period: string) {
+export async function getOrCreateAppraisal(userId: number, period: string, reviewDate?: string | null) {
   const existing = await query<AppraisalRow>(
     "SELECT * FROM appraisals WHERE user_id = $1 AND period = $2",
     [userId, period]
   );
 
   if (existing.rows[0]) {
+    if (!existing.rows[0].review_date && reviewDate) {
+      const updated = await query<AppraisalRow>(
+        `
+          UPDATE appraisals
+          SET review_date = $3,
+              updated_at = NOW()
+          WHERE user_id = $1 AND period = $2
+          RETURNING *
+        `,
+        [userId, period, reviewDate]
+      );
+
+      return updated.rows[0];
+    }
+
     return existing.rows[0];
   }
 
   const created = await query<AppraisalRow>(
     `
-      INSERT INTO appraisals (user_id, period, status, employee_signed, manager_signed)
-      VALUES ($1, $2, 'draft', FALSE, FALSE)
+      INSERT INTO appraisals (user_id, period, status, review_date, employee_signed, manager_signed)
+      VALUES ($1, $2, 'draft', $3, FALSE, FALSE)
       RETURNING *
     `,
-    [userId, period]
+    [userId, period, reviewDate ?? null]
   );
 
   return created.rows[0];
@@ -125,7 +169,7 @@ export async function getOrCreateAppraisal(userId: number, period: string) {
 
 export async function getOrCreateActiveAppraisal(userId: number) {
   const activePeriod = await getActiveReviewPeriod();
-  return getOrCreateAppraisal(userId, activePeriod.name);
+  return getOrCreateAppraisal(userId, activePeriod.name, activePeriod.ends_on ?? null);
 }
 
 export async function assertKpiWeightTotal(appraisalId: number, userId: number, nextWeight?: number, excludeKpiId?: number) {
@@ -188,6 +232,18 @@ export async function requirePerformanceForFinal(kpiId: number) {
   return performance;
 }
 
+export function isReviewDateOpen(reviewDate?: string | null) {
+  if (!reviewDate) return true;
+
+  const deadline = new Date(reviewDate);
+  if (Number.isNaN(deadline.getTime())) {
+    return true;
+  }
+
+  deadline.setHours(23, 59, 59, 999);
+  return deadline.getTime() >= Date.now();
+}
+
 export async function getAppraisalById(appraisalId: number) {
   const appraisal = await query<AppraisalRow>("SELECT * FROM appraisals WHERE id = $1", [appraisalId]);
   const record = appraisal.rows[0];
@@ -218,4 +274,38 @@ export async function requireEvaluationStageOpen(appraisalId: number) {
   }
 
   return record;
+}
+
+export async function ensureAppraisalWithinReviewDate(appraisalId: number, message?: string) {
+  const record = await getAppraisalById(appraisalId);
+
+  if (!isReviewDateOpen(record.review_date ?? null)) {
+    throw new ApiError(409, message ?? "This appraisal is closed because the review date has passed.");
+  }
+
+  return record;
+}
+
+export async function requireAppraisalReadyForDirector(appraisalId: number) {
+  const result = await query<{ total: string; finalized: string }>(
+    `
+      SELECT
+        COUNT(k.id)::text AS total,
+        COUNT(k.id) FILTER (WHERE p.final_score IS NOT NULL)::text AS finalized
+      FROM kpis k
+      LEFT JOIN performance p ON p.kpi_id = k.id
+      WHERE k.appraisal_id = $1
+        AND k.status = 'approved'
+    `,
+    [appraisalId]
+  );
+
+  const total = Number(result.rows[0]?.total ?? 0);
+  const finalized = Number(result.rows[0]?.finalized ?? 0);
+
+  if (total === 0 || finalized < total) {
+    throw new ApiError(400, "Director remarks can only be added after all approved KPI final scores are completed.");
+  }
+
+  return getAppraisalById(appraisalId);
 }

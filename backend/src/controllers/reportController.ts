@@ -12,7 +12,7 @@ export const userReport = asyncHandler(async (req: AuthedRequest, res: Response)
              a.employee_signed,
              a.manager_signed,
              COUNT(k.id) AS kpi_count,
-             ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_score
+             ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_score
       FROM appraisals a
       LEFT JOIN kpis k ON k.appraisal_id = a.id
       LEFT JOIN performance p ON p.kpi_id = k.id
@@ -28,7 +28,7 @@ export const userReport = asyncHandler(async (req: AuthedRequest, res: Response)
       SELECT
         COUNT(DISTINCT a.id) AS appraisal_count,
         COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'completed') AS completed_appraisals,
-        ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_final_score,
+        ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_final_score,
         ROUND(
           COALESCE(
             100.0 * COUNT(k.id) FILTER (WHERE p.actual IS NOT NULL AND p.actual >= k.target)
@@ -80,12 +80,12 @@ export const departmentReport = asyncHandler(async (req: AuthedRequest, res: Res
              COUNT(DISTINCT a.id) AS active_appraisals,
              ROUND(
                COALESCE(
-                 100.0 * COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'completed') / NULLIF(COUNT(DISTINCT a.id), 0),
-                 0
-               ),
-               1
-             ) AS completion_rate,
-             ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_score,
+            100.0 * COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'completed') / NULLIF(COUNT(DISTINCT a.id), 0),
+            0
+          ),
+          1
+        ) AS completion_rate,
+        ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_score,
              ROUND(
                COALESCE(
                  100.0 * COUNT(k.id) FILTER (WHERE p.actual IS NOT NULL AND p.actual >= k.target) / NULLIF(COUNT(k.id), 0),
@@ -117,7 +117,7 @@ export const departmentReport = asyncHandler(async (req: AuthedRequest, res: Res
           ),
           1
         ) AS completion_rate,
-        ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_score
+        ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_score
       FROM departments d
       JOIN users u ON u.department_id = d.id
       JOIN appraisals a ON a.user_id = u.id
@@ -137,7 +137,7 @@ export const departmentReport = asyncHandler(async (req: AuthedRequest, res: Res
         u.name,
         a.period,
         a.status,
-        ROUND(COALESCE(AVG(p.final_score), 0), 1) AS average_score,
+        ROUND(COALESCE(AVG(p.final_score) * 20, 0), 1) AS average_score,
         ROUND(COALESCE(AVG(ABS(COALESCE(p.self_score, 0) - COALESCE(p.manager_score, 0))), 0), 1) AS score_variance
       FROM departments d
       JOIN users u ON u.department_id = d.id AND u.role = 'employee'
