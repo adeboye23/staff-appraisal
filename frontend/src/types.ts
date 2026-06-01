@@ -45,6 +45,7 @@ export type Kpi = {
   targetSelfScore?: number;
   selfScore?: number;
   managerScore?: number;
+  managerScoreLocked?: boolean;
   finalScore?: number;
 };
 
@@ -57,6 +58,7 @@ export type PerformanceRow = {
   target_self_score: number | string | null;
   self_score: number | string | null;
   manager_score: number | string | null;
+  manager_score_locked: boolean | null;
   final_score: number | string | null;
 };
 

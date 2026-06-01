@@ -195,6 +195,7 @@ function mergeKpiData(
         performance?.manager_score === null || performance?.manager_score === undefined
           ? undefined
           : Number(performance.manager_score),
+      managerScoreLocked: Boolean(performance?.manager_score_locked),
       finalScore:
         performance?.final_score === null || performance?.final_score === undefined
           ? undefined
@@ -2395,7 +2396,7 @@ function AppraisalFlow({
     setManagerScoreInputs((current) => {
       const next: Record<number, string> = {};
       approvedKpis.forEach((item) => {
-        next[item.id] = current[item.id] ?? (item.managerScore === undefined ? "" : String(item.managerScore));
+        next[item.id] = item.managerScore === undefined ? (current[item.id] ?? "") : String(item.managerScore);
       });
       return next;
     });
@@ -2405,7 +2406,7 @@ function AppraisalFlow({
     setFinalScoreInputs((current) => {
       const next: Record<number, string> = {};
       approvedKpis.forEach((item) => {
-        next[item.id] = current[item.id] ?? (item.finalScore === undefined ? "" : String(item.finalScore));
+        next[item.id] = item.finalScore === undefined ? (current[item.id] ?? "") : String(item.finalScore);
       });
       return next;
     });
@@ -2528,11 +2529,20 @@ function AppraisalFlow({
                       (user.role === "manager" || hasAdminAccess(user.role)) &&
                       !isOwnProfile &&
                       reviewOpen &&
-                      item.selfScore !== undefined;
+                      item.selfScore !== undefined &&
+                      !item.managerScoreLocked &&
+                      item.managerScore === undefined;
+                    const canSubmitFinalScore =
+                      (user.role === "manager" || hasAdminAccess(user.role)) &&
+                      !isOwnProfile &&
+                      reviewOpen &&
+                      item.managerScore !== undefined &&
+                      item.finalScore === undefined;
                     const canDirectorReview =
                       hasAdminAccess(user.role) &&
                       !isOwnProfile &&
                       Boolean(item.appraisalId) &&
+                      item.appraisalDirectorOverallRemark === null &&
                       approvedKpis.filter((kpi) => kpi.appraisalId === item.appraisalId).every((kpi) => kpi.finalScore !== undefined);
                     const targetScoreInput = targetScoreInputs[item.id] ?? "";
                     const reviewSelfScoreInput = reviewSelfScoreInputs[item.id] ?? "";
@@ -2703,7 +2713,7 @@ function AppraisalFlow({
                                   <div className="grid gap-5">
                                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
                                       <p className="text-base font-semibold text-slate-900">Manager and final scoring</p>
-                                      {canManagerScore ? (
+                                      {(canManagerScore || item.managerScore !== undefined || canSubmitFinalScore || item.finalScore !== undefined) ? (
                                         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                                           <label className="block text-sm">
                                             <span className="mb-2 block font-medium text-slate-700">Manager score</span>
@@ -2713,19 +2723,23 @@ function AppraisalFlow({
                                               max="5"
                                               step="0.1"
                                               value={managerScoreInput}
+                                              disabled={!canManagerScore}
                                               onChange={(event) =>
                                                 setManagerScoreInputs((current) => ({
                                                   ...current,
                                                   [item.id]: event.target.value
                                                 }))
                                               }
-                                              className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 disabled:bg-slate-50 disabled:text-slate-500"
                                               placeholder="Enter manager score"
                                             />
+                                            {item.managerScore !== undefined && (
+                                              <span className="mt-2 block text-xs font-semibold text-emerald-700">Manager score submitted and locked.</span>
+                                            )}
                                           </label>
                                           <div className="flex items-end">
                                             <button
-                                              disabled={actionState.kind !== null || managerScoreInput === ""}
+                                              disabled={!canManagerScore || actionState.kind !== null || managerScoreInput === ""}
                                               className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
                                               onClick={() => void onSubmitManagerScore(item.id, Number(managerScoreInput))}
                                             >
@@ -2741,19 +2755,23 @@ function AppraisalFlow({
                                               max="5"
                                               step="0.1"
                                               value={finalScoreInput}
+                                              disabled={!canSubmitFinalScore}
                                               onChange={(event) =>
                                                 setFinalScoreInputs((current) => ({
                                                   ...current,
                                                   [item.id]: event.target.value
                                                 }))
                                               }
-                                              className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                                              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 disabled:bg-slate-50 disabled:text-slate-500"
                                               placeholder="Enter final agreed score"
                                             />
+                                            {item.finalScore !== undefined && (
+                                              <span className="mt-2 block text-xs font-semibold text-emerald-700">Final score submitted and locked.</span>
+                                            )}
                                           </label>
                                           <div className="flex items-end">
                                             <button
-                                              disabled={actionState.kind !== null || finalScoreInput === "" || item.managerScore === undefined}
+                                              disabled={!canSubmitFinalScore || actionState.kind !== null || finalScoreInput === ""}
                                               className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
                                               onClick={() => void onSubmitFinalScore(item.id, Number(finalScoreInput))}
                                             >
@@ -2767,7 +2785,9 @@ function AppraisalFlow({
                                             ? "The review date has passed."
                                             : item.selfScore === undefined
                                               ? "Waiting for the employee to complete the review stage before manager scoring can continue."
-                                              : "Manager scoring will appear here when the record is ready."}
+                                              : item.managerScore !== undefined
+                                                ? "Manager score is locked. Final score opens until it is submitted, then locks too."
+                                                : "Manager scoring will appear here when the record is ready."}
                                         </div>
                                       )}
                                     </div>
@@ -2798,7 +2818,12 @@ function AppraisalFlow({
                                         </div>
                                       ) : (
                                         <div className="mt-4 space-y-3 text-sm text-slate-600">
-                                          <p>{item.appraisalDirectorOverallRemark || "Director overall remark will appear here after final scoring is completed."}</p>
+                                          <p>
+                                            {item.appraisalDirectorOverallRemark ||
+                                              (hasAdminAccess(user.role)
+                                                ? "Director review opens here after every approved KPI in this appraisal has a locked final score."
+                                                : "Director final comments will appear here after HR or the super admin records them.")}
+                                          </p>
                                           {item.appraisalDirectorImprovementSuggestions ? <p>Improvement: {item.appraisalDirectorImprovementSuggestions}</p> : null}
                                           {item.appraisalDirectorTrainingRecommendations ? <p>Training: {item.appraisalDirectorTrainingRecommendations}</p> : null}
                                         </div>

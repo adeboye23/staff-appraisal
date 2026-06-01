@@ -66,7 +66,17 @@ export const getPerformance = asyncHandler(async (req: AuthedRequest, res: Respo
   const userId = Number(req.params.userId);
   const result = await query(
     `
-      SELECT k.id AS kpi_id, k.title, k.weight, k.target, p.actual, p.target_self_score, p.self_score, p.manager_score, p.final_score
+      SELECT
+        k.id AS kpi_id,
+        k.title,
+        k.weight,
+        k.target,
+        p.actual,
+        p.target_self_score,
+        p.self_score,
+        p.manager_score,
+        p.manager_score_locked,
+        p.final_score
       FROM kpis k
       LEFT JOIN performance p ON p.kpi_id = k.id
       WHERE k.user_id = $1
@@ -267,6 +277,10 @@ export const finalScore = asyncHandler(async (req: AuthedRequest, res: Response)
     throw new ApiError(400, "Agreement checkbox must be confirmed");
   }
   const performance = await requirePerformanceForFinal(data.kpiId);
+  if (performance.final_score !== null) {
+    throw new ApiError(409, "Final score cannot be edited after submission");
+  }
+
   const result = await query(
     `
       UPDATE performance
