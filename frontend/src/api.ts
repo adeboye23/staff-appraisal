@@ -4,6 +4,7 @@ import {
   DepartmentReportResponse,
   LoginResponse,
   NotificationItem,
+  OrganizationReportRow,
   PerformanceRow,
   TimelineItem,
   CommentHistoryItem,
@@ -192,6 +193,10 @@ export function getUserReport(userId: number, token: string) {
 
 export function getDepartmentReport(departmentId: number, token: string) {
   return request<DepartmentReportResponse>(`/reports/department/${departmentId}`, { method: "GET" }, token);
+}
+
+export function getOrganizationReport(token: string) {
+  return request<{ rows: OrganizationReportRow[] }>("/reports/organization", { method: "GET" }, token);
 }
 
 export function getStaffDirectory(token: string, scope?: string) {

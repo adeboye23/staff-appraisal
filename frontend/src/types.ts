@@ -231,6 +231,35 @@ export type DepartmentReportResponse = {
   }>;
 };
 
+export type OrganizationReportRow = {
+  department: string | null;
+  employee_id: number;
+  employee_name: string;
+  employee_email: string;
+  manager_name: string | null;
+  period: string | null;
+  appraisal_status: "draft" | "in_review" | "completed" | null;
+  review_date: string | null;
+  employee_signed: boolean | null;
+  manager_signed: boolean | null;
+  kpi_id: number | null;
+  title: string | null;
+  description: string | null;
+  kpi_status: "draft" | "submitted" | "approved" | "rejected" | null;
+  target: string | number | null;
+  actual: string | number | null;
+  target_self_score: string | number | null;
+  self_score: string | number | null;
+  manager_score: string | number | null;
+  final_score: string | number | null;
+  variance: string | number | null;
+  employee_comment: string | null;
+  manager_comment: string | null;
+  director_overall_remark: string | null;
+  director_improvement_suggestions: string | null;
+  director_training_recommendations: string | null;
+};
+
 export type EmployeeApproval = {
   name: string;
   role: string;

@@ -43,6 +43,7 @@ import {
   deleteStaff,
   getDepartmentReport,
   getNotifications,
+  getOrganizationReport,
   getUserComments,
   getDashboardSummary,
   getDepartments,
@@ -271,6 +272,29 @@ function getDashboardAverageScore(summary: DashboardResponse["summary"]) {
   if ("team_average_score" in summary) return summary.team_average_score;
   if ("average_final_score" in summary) return summary.average_final_score;
   return 0;
+}
+
+function downloadCsv(filename: string, rows: Array<Record<string, string | number | boolean | null | undefined>>) {
+  if (rows.length === 0) return false;
+
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers
+        .map((header) => `"${String(row[header] ?? "").replace(/"/g, '""')}"`)
+        .join(",")
+    )
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+  return true;
 }
 
 function App() {
@@ -3065,6 +3089,7 @@ function Reports({
   const [userReport, setUserReport] = useState<UserReportResponse | null>(null);
   const [departmentReport, setDepartmentReport] = useState<DepartmentReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [organizationExporting, setOrganizationExporting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -3186,6 +3211,10 @@ function Reports({
   const selectedStaff = staff.find((member) => String(member.id) === selectedUserId);
   const reportName = selectedStaff?.name ?? getDisplayName(user);
   const safeReportName = reportName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "staff";
+  const safeSelectedPeriod =
+    selectedPeriod === "all"
+      ? "all-periods"
+      : selectedPeriod.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "selected-period";
 
   const formatScore = (value: string | number | null | undefined) =>
     value === null || value === undefined ? "--" : `${Number(value).toFixed(1)}/5`;
@@ -3229,23 +3258,51 @@ function Reports({
       return;
     }
 
-    const headers = Object.keys(rows[0]);
-    const csv = [
-      headers.join(","),
-      ...rows.map((row) =>
-        headers
-          .map((header) => `"${String(row[header as keyof typeof row] ?? "").replace(/"/g, '""')}"`)
-          .join(",")
-      )
-    ].join("\n");
+    downloadCsv(`news-central-report-${safeReportName}.csv`, rows);
+  };
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `news-central-report-${safeReportName}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const exportOrganizationExcel = async () => {
+    if (user.role !== "hr") return;
+
+    setOrganizationExporting(true);
+    setError("");
+    try {
+      const response = await getOrganizationReport(token);
+      const filteredRows = response.rows.filter((item) => selectedPeriod === "all" || item.period === selectedPeriod);
+      const rows = filteredRows.map((item) => ({
+        department: item.department ?? "",
+        employee_name: item.employee_name,
+        employee_email: item.employee_email,
+        manager: item.manager_name ?? "",
+        period: item.period ?? "",
+        appraisal_status: item.appraisal_status ?? "",
+        review_date: item.review_date ?? "",
+        employee_signed: item.employee_signed ? "Yes" : "No",
+        manager_signed: item.manager_signed ? "Yes" : "No",
+        kpi: item.title ?? "",
+        objective: item.description ?? "",
+        target: item.target ?? "",
+        actual: item.actual ?? "",
+        target_self_score: item.target_self_score ?? "",
+        employee_score: item.self_score ?? "",
+        manager_score: item.manager_score ?? "",
+        final_score: item.final_score ?? "",
+        variance: item.variance ?? "",
+        achievement: item.employee_comment ?? "",
+        manager_comment: item.manager_comment ?? "",
+        director_overall_remark: item.director_overall_remark ?? "",
+        director_suggestions: item.director_improvement_suggestions ?? "",
+        training_recommendations: item.director_training_recommendations ?? ""
+      }));
+
+      if (!downloadCsv(`news-central-all-staff-scores-${safeSelectedPeriod}.csv`, rows)) {
+        setError("There is no organization score data to export yet.");
+      }
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Unable to export all staff scores");
+    } finally {
+      setOrganizationExporting(false);
+    }
   };
 
   const exportPdf = () => {
@@ -3381,6 +3438,16 @@ function Reports({
               <Download size={16} />
               Excel
             </button>
+            {user.role === "hr" && (
+              <button
+                onClick={() => void exportOrganizationExcel()}
+                disabled={organizationExporting}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-70"
+              >
+                <Download size={16} />
+                {organizationExporting ? "Preparing..." : "All Staff Excel"}
+              </button>
+            )}
             <button
               onClick={exportPdf}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
