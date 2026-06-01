@@ -184,16 +184,24 @@ export type UserReportResponse = {
     average_score: string | number;
   }>;
   kpis: Array<{
+    id: number;
+    appraisal_id: number;
     period: string;
     title: string;
+    description: string | null;
     status: "draft" | "submitted" | "approved" | "rejected";
-    weight: string | number;
     target: string | number;
     actual: string | number | null;
+    target_self_score: string | number | null;
     self_score: string | number | null;
     manager_score: string | number | null;
     final_score: string | number | null;
     variance: string | number;
+    employee_comment: string | null;
+    manager_comment: string | null;
+    director_overall_remark: string | null;
+    director_improvement_suggestions: string | null;
+    director_training_recommendations: string | null;
   }>;
 };
 

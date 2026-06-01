@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Search,
   Settings,
   ShieldCheck,
   Target,
@@ -31,6 +32,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
+import jsPDF from "jspdf";
 import {
   approveKpi as approveKpiRequest,
   changePassword as changePasswordRequest,
@@ -250,18 +252,6 @@ function KpiPeriodBadge({ period }: { period?: string }) {
   );
 }
 
-function LockStateBadge({ opened }: { opened: boolean }) {
-  return (
-    <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-        opened ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
-      }`}
-    >
-      {opened ? "Open" : "Closed"}
-    </span>
-  );
-}
-
 function BrandLogo({ className = "", withLabel = false }: { className?: string; withLabel?: boolean }) {
   return (
     <div className={`flex items-center gap-3 ${className}`}>
@@ -313,7 +303,7 @@ function App() {
   const [newKpiForm, setNewKpiForm] = useState({
     title: "",
     description: "",
-    weight: "",
+    weight: "1",
     target: ""
   });
   const [loadingSummary, setLoadingSummary] = useState(false);
@@ -662,19 +652,16 @@ function App() {
       if (!newKpiForm.title.trim()) {
         throw new Error("KPI title is required.");
       }
-      if (!newKpiForm.weight || Number(newKpiForm.weight) <= 0) {
-        throw new Error("KPI weight must be greater than 0.");
-      }
       await createKpiRequest(token, {
         userId: selectedProfileId,
         period: activeReviewPeriod?.name,
         title: newKpiForm.title,
         description: newKpiForm.description,
-        weight: newKpiForm.weight ? Number(newKpiForm.weight) : 0,
+        weight: 1,
         target: newKpiForm.target ? Number(newKpiForm.target) : 0
       });
       await refreshProfileData();
-      setNewKpiForm({ title: "", description: "", weight: "", target: "" });
+      setNewKpiForm({ title: "", description: "", weight: "1", target: "" });
       setKpiFeedback({
         scope: "create",
         tone: "success",
@@ -699,14 +686,11 @@ function App() {
       if (!kpi.title.trim()) {
         throw new Error("KPI title is required before saving.");
       }
-      if (Number(kpi.weight) <= 0) {
-        throw new Error("KPI weight must be greater than 0 before saving.");
-      }
 
       await updateKpiRequest(token, kpi.id, {
         title: kpi.title,
         description: kpi.description,
-        weight: kpi.weight,
+        weight: kpi.weight || 1,
         target: kpi.target
       });
 
@@ -1126,11 +1110,6 @@ function LoginScreen({
             <p className="mt-5 max-w-lg text-lg leading-8 text-white/82">
               Sign in to manage KPIs, review progress, and complete appraisal cycles with a cleaner News Central workflow.
             </p>
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="rounded-[40px] border border-white/20 bg-white/10 p-6 shadow-[0_30px_80px_rgba(127,9,22,0.38)] backdrop-blur-sm">
-              <img src={companyLogo} alt="News Central" className="h-52 w-52 rounded-[32px] object-cover" />
-            </div>
           </div>
         </section>
         <section className="flex min-h-screen items-center justify-center bg-[#fff7f7] px-5 py-8 sm:px-8 lg:px-12">
@@ -2076,7 +2055,6 @@ function KpiManagement({
                     <th className="px-4 py-4">KPI</th>
                     <th className="px-4 py-4">Cycle</th>
                     <th className="px-4 py-4">Status</th>
-                    <th className="px-4 py-4">Weight</th>
                     <th className="px-4 py-4">Target</th>
                   </tr>
                 </thead>
@@ -2089,7 +2067,6 @@ function KpiManagement({
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">{item.appraisalPeriod || "--"}</td>
                       <td className="px-4 py-4"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[item.status]}`}>{getStatusLabel(item.status)}</span></td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{item.weight}%</td>
                       <td className="px-4 py-4 text-sm text-slate-600">{item.target}</td>
                     </tr>
                   ))}
@@ -2110,7 +2087,6 @@ function KpiManagement({
                     <div className="grid grid-cols-2 gap-3 lg:min-w-[280px]">
                       <SnapshotRow label="Cycle" value={item.appraisalPeriod || "--"} />
                       <SnapshotRow label="Target" value={String(item.target)} />
-                      <SnapshotRow label="Weight" value={`${item.weight}%`} />
                       <SnapshotRow label="Status" value={getStatusLabel(item.status)} />
                     </div>
                   </div>
@@ -2161,10 +2137,6 @@ function KpiManagement({
                       <textarea value={item.description ?? ""} onChange={(event) => onRowChange(item.id, "description", event.target.value)} rows={4} disabled={!canEdit} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50" />
                     </label>
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium text-slate-700">Weight (%)</span>
-                      <input type="number" min="0" max="100" value={item.weight} onChange={(event) => onRowChange(item.id, "weight", event.target.value)} disabled={!canEdit} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50" />
-                    </label>
-                    <label className="text-sm">
                       <span className="mb-2 block font-medium text-slate-700">Target</span>
                       <input type="number" min="0" value={item.target} onChange={(event) => onRowChange(item.id, "target", event.target.value)} disabled={!canEdit} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand disabled:bg-slate-50" />
                     </label>
@@ -2211,10 +2183,6 @@ function KpiManagement({
                 <label className="text-sm">
                   <span className="mb-2 block font-medium text-slate-700">Goals</span>
                   <textarea value={newKpiForm.description} onChange={(event) => onNewKpiChange({ ...newKpiForm, description: event.target.value })} rows={4} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand" />
-                </label>
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-slate-700">Weight (%)</span>
-                  <input type="number" min="0" max="100" value={newKpiForm.weight} onChange={(event) => onNewKpiChange({ ...newKpiForm, weight: event.target.value })} className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand" />
                 </label>
                 <label className="text-sm">
                   <span className="mb-2 block font-medium text-slate-700">Target</span>
@@ -2415,7 +2383,7 @@ function AppraisalFlow({
     return date;
   };
 
-  const lockedFinalReviews = approvedKpis.filter((item) => !isReviewDateOpen(item.appraisalReviewDate)).length;
+  const pastReviewDates = approvedKpis.filter((item) => !isReviewDateOpen(item.appraisalReviewDate)).length;
   const completedReviewStage = approvedKpis.filter((item) => item.selfScore !== undefined).length;
 
   const toggleKpiDetails = (kpiId: number) => {
@@ -2428,7 +2396,7 @@ function AppraisalFlow({
         <MetricCard title="Approved KPIs" value={String(approvedKpis.length)} note={`Manager-approved KPIs for ${profileName}`} tone="slate" />
         <MetricCard title="Target Scores" value={String(approvedKpis.filter((item) => item.targetSelfScore !== undefined).length)} note="Initial employee target scores already recorded" tone="amber" />
         <MetricCard title="Review Stage Done" value={String(completedReviewStage)} note="Employee review stage completed" tone="indigo" />
-        <MetricCard title="Closed" value={String(lockedFinalReviews)} note="Appraisals past their review date" tone="green" />
+        <MetricCard title="Past Review Date" value={String(pastReviewDates)} note="Items beyond their review date" tone="green" />
       </div>
 
       {feedback && (
@@ -2463,7 +2431,6 @@ function AppraisalFlow({
                     <th className="px-4 py-4">KPI</th>
                     <th className="px-4 py-4">Cycle</th>
                     <th className="px-4 py-4">Review date</th>
-                    <th className="px-4 py-4">State</th>
                     <th className="px-4 py-4">Target score</th>
                     <th className="px-4 py-4">Review stage</th>
                     <th className="px-4 py-4">Manager</th>
@@ -2521,25 +2488,22 @@ function AppraisalFlow({
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-600">{item.appraisalPeriod || "--"}</td>
                           <td className="px-4 py-4 text-sm text-slate-600">{item.appraisalReviewDate ? new Date(item.appraisalReviewDate).toLocaleDateString() : "--"}</td>
-                          <td className="px-4 py-4 text-sm">
-                            <LockStateBadge opened={reviewOpen} />
-                          </td>
                           <td className="px-4 py-4 text-sm text-slate-600">
                             {item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Pending"}
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-600">
-                            {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : reviewOpen ? "Awaiting employee" : "Closed"}
+                            {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : reviewOpen ? "Awaiting employee" : "--"}
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-600">
-                            {item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : item.selfScore !== undefined ? "Pending" : "Locked"}
+                            {item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : item.selfScore !== undefined ? "Pending" : "--"}
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-600">
-                            {item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : item.managerScore !== undefined ? "Pending" : "Locked"}
+                            {item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : item.managerScore !== undefined ? "Pending" : "--"}
                           </td>
                         </tr>
                         {isExpanded && (
                           <tr className="bg-[#fcfcfd]">
-                            <td colSpan={8} className="p-0">
+                            <td colSpan={7} className="p-0">
                               <div className="m-4 rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                   <div>
@@ -2550,7 +2514,6 @@ function AppraisalFlow({
                                   <div className="grid grid-cols-2 gap-3 lg:min-w-[340px]">
                                     <SnapshotRow label="Cycle" value={item.appraisalPeriod || "--"} />
                                     <SnapshotRow label="Review date" value={itemReviewDate ? itemReviewDate.toLocaleDateString() : "--"} />
-                                    <SnapshotRow label="State" value={reviewOpen ? "Open" : "Closed"} />
                                     <SnapshotRow label="Target self-score" value={item.targetSelfScore !== undefined ? `${item.targetSelfScore.toFixed(1)}/5` : "Pending"} />
                                     <SnapshotRow label="Review self-score" value={item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : "Pending"} />
                                   </div>
@@ -2655,7 +2618,7 @@ function AppraisalFlow({
                                               : item.targetSelfScore !== undefined
                                                 ? reviewOpen
                                                   ? "The employee can now complete the review stage."
-                                                  : "This appraisal is now closed because the review date has passed."
+                                                  : "The review date has passed."
                                                 : "The employee must set the initial target self-score before this stage can continue."}
                                         </div>
                                       )}
@@ -2726,7 +2689,7 @@ function AppraisalFlow({
                                       ) : (
                                         <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
                                           {!reviewOpen
-                                            ? "This appraisal is closed because the review date has passed."
+                                            ? "The review date has passed."
                                             : item.selfScore === undefined
                                               ? "Waiting for the employee to complete the review stage before manager scoring can continue."
                                               : "Manager scoring will appear here when the record is ready."}
@@ -2969,7 +2932,18 @@ function RoleWorkspaceBanner({
   cycleFilter: "active" | "all";
   setCycleFilter: (value: "active" | "all") => void;
 }) {
+  const [staffSearch, setStaffSearch] = useState("");
   const showToolbar = showProfileFocus || activeView === "kpis" || activeView === "appraisals";
+  const visibleStaff = useMemo(() => {
+    const query = staffSearch.trim().toLowerCase();
+    if (!query) return staff;
+
+    return staff.filter((item) =>
+      [getDisplayNameFromStaff(item), item.email, item.department ?? ""].some((value) =>
+        value.toLowerCase().includes(query)
+      )
+    );
+  }, [staff, staffSearch]);
   const content =
     user.role === "hr"
       ? {
@@ -3018,14 +2992,23 @@ function RoleWorkspaceBanner({
             {showProfileFocus && (
               <label className="block text-sm">
                 <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Staff</span>
+                <div className="relative mb-2">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    value={staffSearch}
+                    onChange={(event) => setStaffSearch(event.target.value)}
+                    className="w-full rounded-2xl border border-neutral-200 bg-white py-3 pl-9 pr-4 text-sm"
+                    placeholder="Search staff"
+                  />
+                </div>
                 <select
                   value={selectedProfileId ?? ""}
                   onChange={(event) => setSelectedProfileId(Number(event.target.value))}
                   className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
                 >
-                  {staff.map((item) => (
+                  {visibleStaff.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {getDisplayNameFromStaff(item)}
+                      {getDisplayNameFromStaff(item)}{item.department ? ` | ${item.department}` : ""}
                     </option>
                   ))}
                 </select>
@@ -3201,6 +3184,27 @@ function Reports({
     userReport?.periods.filter((item) => selectedPeriod === "all" || item.period === selectedPeriod) ?? [];
 
   const selectedStaff = staff.find((member) => String(member.id) === selectedUserId);
+  const reportName = selectedStaff?.name ?? getDisplayName(user);
+  const safeReportName = reportName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "staff";
+
+  const formatScore = (value: string | number | null | undefined) =>
+    value === null || value === undefined ? "--" : `${Number(value).toFixed(1)}/5`;
+
+  const addWrappedText = (
+    doc: jsPDF,
+    label: string,
+    value: string,
+    x: number,
+    y: number,
+    maxWidth: number
+  ) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(label, x, y);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(value || "--", maxWidth);
+    doc.text(lines, x, y + 6);
+    return y + 10 + lines.length * 5;
+  };
 
   const exportCsv = () => {
     const rows =
@@ -3208,12 +3212,15 @@ function Reports({
         period: item.period,
         title: item.title,
         status: item.status,
-        weight: item.weight,
         target: item.target,
         actual: item.actual ?? "",
+        objective: item.description ?? "",
+        achievement: item.employee_comment ?? "",
         self_score: item.self_score ?? "",
         manager_score: item.manager_score ?? "",
         final_score: item.final_score ?? "",
+        manager_comment: item.manager_comment ?? "",
+        director_suggestions: item.director_improvement_suggestions ?? "",
         variance: item.variance
       })) ?? [];
 
@@ -3236,72 +3243,88 @@ function Reports({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `news-central-report-${selectedStaff?.name ?? getDisplayName(user)}.csv`;
+    link.download = `news-central-report-${safeReportName}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   const exportPdf = () => {
-    const reportTitle = selectedStaff?.name ?? getDisplayName(user);
-    const reportWindow = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
-    if (!reportWindow) {
-      setError("Allow pop-ups to export the PDF report.");
+    if (filteredKpis.length === 0) {
+      setError("There is no report data to export yet.");
       return;
     }
 
-    const rows = filteredKpis
-      .map(
-        (item) => `
-          <tr>
-            <td>${item.period}</td>
-            <td>${item.title}</td>
-            <td>${item.status}</td>
-            <td>${item.final_score !== null ? `${toScorePercent(item.final_score)}%` : "--"}</td>
-            <td>${item.variance}</td>
-          </tr>
-        `
-      )
-      .join("");
+    setError("");
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 16;
+    const contentWidth = pageWidth - margin * 2;
+    let y = 18;
 
-    reportWindow.document.write(`
-      <html>
-        <head>
-          <title>News Central Report</title>
-          <style>
-            body { font-family: Inter, Arial, sans-serif; padding: 32px; color: #0f172a; }
-            h1, h2, p { margin: 0; }
-            .meta { margin-top: 8px; color: #475569; font-size: 14px; }
-            .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
-            .card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; background: #f8fafc; }
-            .label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
-            .value { margin-top: 8px; font-size: 26px; font-weight: 700; color: #0f172a; }
-            table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-            th, td { border-bottom: 1px solid #e2e8f0; padding: 12px; text-align: left; font-size: 14px; }
-            th { color: #64748b; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <h1>News Central Performance Report</h1>
-          <p class="meta">${reportTitle}${selectedPeriod !== "all" ? ` | ${selectedPeriod}` : ""}</p>
-          <div class="grid">
-            <div class="card"><div class="label">Average final score</div><div class="value">${userReport ? toNumber(userReport.summary.average_final_score).toFixed(1) : "0.0"}%</div></div>
-            <div class="card"><div class="label">KPI achievement</div><div class="value">${userReport ? toNumber(userReport.summary.achievement_rate).toFixed(1) : "0.0"}%</div></div>
-            <div class="card"><div class="label">Score variance</div><div class="value">${userReport ? toNumber(userReport.summary.score_variance).toFixed(1) : "0.0"}</div></div>
-            <div class="card"><div class="label">Completion rate</div><div class="value">${userReport ? ((toNumber(userReport.summary.completed_appraisals) / Math.max(toNumber(userReport.summary.appraisal_count), 1)) * 100).toFixed(1) : "0.0"}%</div></div>
-          </div>
-          <h2>KPI Details</h2>
-          <table>
-            <thead>
-              <tr><th>Period</th><th>KPI</th><th>Status</th><th>Final Score</th><th>Variance</th></tr>
-            </thead>
-            <tbody>${rows || '<tr><td colspan="5">No rows available for this filter.</td></tr>'}</tbody>
-          </table>
-        </body>
-      </html>
-    `);
-    reportWindow.document.close();
-    reportWindow.focus();
-    reportWindow.print();
+    const ensurePage = (needed = 28) => {
+      if (y + needed <= pageHeight - margin) return;
+      doc.addPage();
+      y = 18;
+    };
+
+    doc.setTextColor(193, 18, 31);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("News Central Performance Report", margin, y);
+    y += 8;
+    doc.setTextColor(71, 85, 105);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`${reportName}${selectedPeriod !== "all" ? ` | ${selectedPeriod}` : ""}`, margin, y);
+    y += 12;
+
+    filteredKpis.forEach((item, index) => {
+      ensurePage(82);
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, y - 5, contentWidth, 10, 2, 2, "F");
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text(`${index + 1}. ${item.title}`, margin + 3, y + 2);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Period: ${item.period} | Status: ${item.status}`, margin + 3, y + 7);
+      y += 16;
+
+      doc.setFontSize(10);
+      y = addWrappedText(doc, "Objective", item.description || item.title, margin, y, contentWidth);
+      y = addWrappedText(doc, "What was achieved", item.employee_comment || String(item.actual ?? "--"), margin, y, contentWidth);
+
+      ensurePage(22);
+      doc.setFont("helvetica", "bold");
+      doc.text("Scores", margin, y);
+      y += 6;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Target self-score: ${formatScore(item.target_self_score)}`, margin, y);
+      doc.text(`Employee score: ${formatScore(item.self_score)}`, margin + 72, y);
+      y += 6;
+      doc.text(`Manager score: ${formatScore(item.manager_score)}`, margin, y);
+      doc.text(`Final score: ${formatScore(item.final_score)}`, margin + 72, y);
+      y += 10;
+
+      y = addWrappedText(doc, "Manager comment", item.manager_comment || "--", margin, y, contentWidth);
+      y = addWrappedText(doc, "Director overall remark", item.director_overall_remark || "--", margin, y, contentWidth);
+      y = addWrappedText(doc, "Director suggestions", item.director_improvement_suggestions || "--", margin, y, contentWidth);
+      y = addWrappedText(doc, "Training recommendations", item.director_training_recommendations || "--", margin, y, contentWidth);
+      y += 4;
+    });
+
+    ensurePage(40);
+    doc.setDrawColor(148, 163, 184);
+    doc.line(margin, y + 18, margin + 74, y + 18);
+    doc.line(pageWidth - margin - 74, y + 18, pageWidth - margin, y + 18);
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(10);
+    doc.text("Director sign-off", margin, y + 24);
+    doc.text("Date", pageWidth - margin - 74, y + 24);
+
+    doc.save(`news-central-performance-report-${safeReportName}.pdf`);
   };
 
   return (

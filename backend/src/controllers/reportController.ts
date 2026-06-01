@@ -49,19 +49,41 @@ export const userReport = asyncHandler(async (req: AuthedRequest, res: Response)
   const kpis = await query(
     `
       SELECT
+        k.id,
+        a.id AS appraisal_id,
         a.period,
         k.title,
+        k.description,
         k.status,
-        k.weight,
         k.target,
         p.actual,
+        p.target_self_score,
         p.self_score,
         p.manager_score,
         p.final_score,
-        ROUND(ABS(COALESCE(p.self_score, 0) - COALESCE(p.manager_score, 0)), 1) AS variance
+        ROUND(ABS(COALESCE(p.self_score, 0) - COALESCE(p.manager_score, 0)), 1) AS variance,
+        employee_comment.comment AS employee_comment,
+        manager_comment.comment AS manager_comment,
+        a.director_overall_remark,
+        a.director_improvement_suggestions,
+        a.director_training_recommendations
       FROM appraisals a
       JOIN kpis k ON k.appraisal_id = a.id
       LEFT JOIN performance p ON p.kpi_id = k.id
+      LEFT JOIN LATERAL (
+        SELECT c.comment
+        FROM comments c
+        WHERE c.kpi_id = k.id AND c.type = 'employee'
+        ORDER BY c.created_at DESC
+        LIMIT 1
+      ) employee_comment ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT c.comment
+        FROM comments c
+        WHERE c.kpi_id = k.id AND c.type = 'manager'
+        ORDER BY c.created_at DESC
+        LIMIT 1
+      ) manager_comment ON TRUE
       WHERE a.user_id = $1
       ORDER BY a.created_at DESC, k.created_at ASC
     `,
