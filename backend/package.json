@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit",
     "seed:staff": "tsx src/scripts/seedStaff.ts",
     "reset:appraisal-data": "tsx src/scripts/resetAppraisalData.ts",
+    "reset:live-test": "tsx src/scripts/resetLiveTestData.ts",
     "align:office": "tsx src/scripts/alignOfficeStructure.ts"
   },
   "dependencies": {
