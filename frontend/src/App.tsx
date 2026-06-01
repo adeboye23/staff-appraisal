@@ -36,6 +36,7 @@ import jsPDF from "jspdf";
 import {
   approveKpi as approveKpiRequest,
   changePassword as changePasswordRequest,
+  completePasswordReset,
   createReviewPeriod as createReviewPeriodRequest,
   createStaff,
   createKpi as createKpiRequest,
@@ -233,10 +234,15 @@ function getNavItemsForRole(role: Role) {
   const allowedByRole: Record<Role, string[]> = {
     employee: ["dashboard", "kpis", "appraisals", "reports", "settings"],
     manager: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"],
-    hr: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"]
+    hr: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"],
+    super_admin: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"]
   };
 
   return navItems.filter((item) => allowedByRole[role].includes(item.key));
+}
+
+function hasAdminAccess(role?: Role | null) {
+  return role === "hr" || role === "super_admin";
 }
 
 function getStatusLabel(status: Kpi["status"]) {
@@ -347,7 +353,7 @@ function App() {
       currentUser.role === "employee"
         ? Promise.resolve({ data: [] as StaffMember[] })
         : getStaffDirectory(authToken, currentUser.role === "manager" ? "team" : undefined),
-      currentUser.role === "hr"
+      hasAdminAccess(currentUser.role)
         ? getDepartments(authToken)
         : Promise.resolve({ data: [] as Department[] }),
       getReviewPeriods(authToken)
@@ -612,7 +618,7 @@ function App() {
   }, [activeView, selectedProfileId, token, user]);
 
   const pageTitle =
-    user?.role === "hr"
+    hasAdminAccess(user?.role)
       ? {
           dashboard: "HR Command Center",
           kpis: "HR KPI Workspace",
@@ -639,7 +645,7 @@ function App() {
           }[activeView] ?? "My Dashboard";
 
   const showProfileFocus =
-    (user?.role === "manager" || user?.role === "hr") &&
+    (user?.role === "manager" || hasAdminAccess(user?.role)) &&
     staff.length > 0 &&
     ["kpis", "appraisals", "reviews"].includes(activeView);
 
@@ -919,14 +925,30 @@ function App() {
     }
   };
 
-  const handlePasswordResetRequest = async (payload: { email: string; newPassword: string }) => {
+  const handlePasswordResetRequest = async (email: string) => {
     setPasswordResetPending(true);
     setLoginError("");
     setPasswordResetStatus("");
 
     try {
-      await requestPasswordReset(payload.email, payload.newPassword);
+      const response = await requestPasswordReset(email);
+      setPasswordResetStatus(response.message);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "Unable to request password reset");
+    } finally {
+      setPasswordResetPending(false);
+    }
+  };
+
+  const handlePasswordResetComplete = async (payload: { email: string; token: string; newPassword: string }) => {
+    setPasswordResetPending(true);
+    setLoginError("");
+    setPasswordResetStatus("");
+
+    try {
+      await completePasswordReset(payload.email, payload.token, payload.newPassword);
       setPasswordResetStatus("Password reset successful. You can sign in with the new password now.");
+      window.history.replaceState({}, document.title, window.location.pathname);
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : "Unable to reset password");
     } finally {
@@ -958,7 +980,8 @@ function App() {
         resetPending={passwordResetPending}
         status={passwordResetStatus}
         onChange={setLoginForm}
-        onResetPassword={handlePasswordResetRequest}
+        onRequestPasswordReset={handlePasswordResetRequest}
+        onCompletePasswordReset={handlePasswordResetComplete}
         onSubmit={handleLogin}
       />
     );
@@ -1102,7 +1125,8 @@ function LoginScreen({
   resetPending,
   status,
   onChange,
-  onResetPassword,
+  onRequestPasswordReset,
+  onCompletePasswordReset,
   onSubmit
 }: {
   form: { email: string; password: string };
@@ -1111,12 +1135,19 @@ function LoginScreen({
   resetPending: boolean;
   status: string;
   onChange: (value: { email: string; password: string }) => void;
-  onResetPassword: (payload: { email: string; newPassword: string }) => Promise<void>;
+  onRequestPasswordReset: (email: string) => Promise<void>;
+  onCompletePasswordReset: (payload: { email: string; token: string; newPassword: string }) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const [mode, setMode] = useState<"login" | "forgot">("login");
-  const [resetForm, setResetForm] = useState({ email: "", newPassword: "" });
+  const resetParams = new URLSearchParams(window.location.search);
+  const [mode, setMode] = useState<"login" | "forgot">(resetParams.get("resetToken") ? "forgot" : "login");
+  const [resetForm, setResetForm] = useState({
+    email: resetParams.get("email") ?? "",
+    token: resetParams.get("resetToken") ?? "",
+    newPassword: ""
+  });
   const [rememberMe, setRememberMe] = useState(true);
+  const hasResetToken = resetForm.token.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-[#c1121f]">
@@ -1147,7 +1178,9 @@ function LoginScreen({
                 <p className="mt-2 text-sm text-slate-500">
                   {mode === "login"
                     ? "Sign in to continue your appraisal workflow."
-                    : "Set a new password so you can access your workspace."}
+                    : hasResetToken
+                      ? "Set a new password so you can access your workspace."
+                      : "Enter your work email and we will send a secure reset link."}
                 </p>
               </div>
               <BrandLogo />
@@ -1212,7 +1245,12 @@ function LoginScreen({
                   className="space-y-4"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void onResetPassword(resetForm);
+                    if (hasResetToken) {
+                      void onCompletePasswordReset(resetForm);
+                      return;
+                    }
+
+                    void onRequestPasswordReset(resetForm.email);
                   }}
                 >
                   <label className="block text-sm">
@@ -1224,21 +1262,34 @@ function LoginScreen({
                       placeholder="name@newscentral.com"
                     />
                   </label>
-                  <label className="block text-sm">
-                    <span className="mb-2 block font-medium text-slate-700">New password</span>
-                    <input
-                      type="password"
-                      value={resetForm.newPassword}
-                      onChange={(event) => setResetForm((current) => ({ ...current, newPassword: event.target.value }))}
-                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
-                      placeholder="Enter a new password"
-                    />
-                  </label>
+                  {hasResetToken && (
+                    <>
+                      <label className="block text-sm">
+                        <span className="mb-2 block font-medium text-slate-700">Reset token</span>
+                        <input
+                          value={resetForm.token}
+                          onChange={(event) => setResetForm((current) => ({ ...current, token: event.target.value }))}
+                          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
+                          placeholder="Paste reset token"
+                        />
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-2 block font-medium text-slate-700">New password</span>
+                        <input
+                          type="password"
+                          value={resetForm.newPassword}
+                          onChange={(event) => setResetForm((current) => ({ ...current, newPassword: event.target.value }))}
+                          className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
+                          placeholder="Enter a new password"
+                        />
+                      </label>
+                    </>
+                  )}
                   <button
                     disabled={resetPending}
                     className="w-full rounded-2xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {resetPending ? "Resetting..." : "Reset password"}
+                    {resetPending ? "Working..." : hasResetToken ? "Reset password" : "Send reset link"}
                   </button>
                   <div className="pt-2 text-right">
                     <button type="button" onClick={() => setMode("login")} className="text-sm font-medium text-brand">
@@ -2007,10 +2058,10 @@ function KpiManagement({
   actionState: KpiActionState;
 }) {
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
-  const canCreate = user.role === "hr" || isOwnProfile;
-  const canEdit = user.role === "hr" || isOwnProfile;
-  const canDelete = user.role === "hr" || isOwnProfile;
-  const canApprove = (user.role === "manager" || user.role === "hr") && !isOwnProfile;
+  const canCreate = hasAdminAccess(user.role) || isOwnProfile;
+  const canEdit = hasAdminAccess(user.role) || isOwnProfile;
+  const canDelete = hasAdminAccess(user.role) || isOwnProfile;
+  const canApprove = (user.role === "manager" || hasAdminAccess(user.role)) && !isOwnProfile;
   const editableKpis = kpiRows.filter((item) => item.status === "Draft" || item.status === "Rejected");
   const submittedKpis = kpiRows.filter((item) => item.status === "Submitted");
   const approvedCount = kpiRows.filter((item) => item.status === "Approved").length;
@@ -2474,12 +2525,12 @@ function AppraisalFlow({
                       item.selfScore === undefined &&
                       reviewOpen;
                     const canManagerScore =
-                      (user.role === "manager" || user.role === "hr") &&
+                      (user.role === "manager" || hasAdminAccess(user.role)) &&
                       !isOwnProfile &&
                       reviewOpen &&
                       item.selfScore !== undefined;
                     const canDirectorReview =
-                      user.role === "hr" &&
+                      hasAdminAccess(user.role) &&
                       !isOwnProfile &&
                       Boolean(item.appraisalId) &&
                       approvedKpis.filter((kpi) => kpi.appraisalId === item.appraisalId).every((kpi) => kpi.finalScore !== undefined);
@@ -2867,7 +2918,7 @@ function ReviewsPanel({
     );
   }
 
-  if (user.role === "hr" && dashboard?.role === "hr") {
+  if (hasAdminAccess(user.role) && dashboard?.role === "hr") {
     return (
       <section className="space-y-6">
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
@@ -2969,7 +3020,7 @@ function RoleWorkspaceBanner({
     );
   }, [staff, staffSearch]);
   const content =
-    user.role === "hr"
+    hasAdminAccess(user.role)
       ? {
           eyebrow: "HR workspace",
           title: activeView === "settings" ? "Organization control room" : "HR control room",
@@ -3093,7 +3144,7 @@ function Reports({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (user.role !== "hr") return;
+    if (!hasAdminAccess(user.role)) return;
     if (!selectedDepartmentId && departments[0]?.id) {
       setSelectedDepartmentId(String(departments[0].id));
     }
@@ -3120,7 +3171,7 @@ function Reports({
       setError("");
       try {
         const tasks: Array<Promise<unknown>> = [];
-        const isHr = user.role === "hr";
+        const isHr = hasAdminAccess(user.role);
         const reportUserId = user.role === "employee" ? user.id : Number(selectedUserId);
 
         if (reportUserId) {
@@ -3160,7 +3211,7 @@ function Reports({
   }, [selectedDepartmentId, selectedUserId, token, user]);
 
   const barData =
-    user.role === "hr" && departmentReport?.periods?.length
+    hasAdminAccess(user.role) && departmentReport?.periods?.length
       ? departmentReport.periods
           .filter((item) => selectedPeriod === "all" || item.period === selectedPeriod)
           .map((item) => ({
@@ -3262,7 +3313,7 @@ function Reports({
   };
 
   const exportOrganizationExcel = async () => {
-    if (user.role !== "hr") return;
+    if (!hasAdminAccess(user.role)) return;
 
     setOrganizationExporting(true);
     setError("");
@@ -3406,7 +3457,7 @@ function Reports({
                 ))}
               </select>
             )}
-            {user.role === "hr" && (
+            {hasAdminAccess(user.role) && (
               <select
                 value={selectedDepartmentId}
                 onChange={(event) => setSelectedDepartmentId(event.target.value)}
@@ -3438,7 +3489,7 @@ function Reports({
               <Download size={16} />
               Excel
             </button>
-            {user.role === "hr" && (
+            {hasAdminAccess(user.role) && (
               <button
                 onClick={() => void exportOrganizationExcel()}
                 disabled={organizationExporting}
@@ -3489,7 +3540,7 @@ function Reports({
         />
         <MetricCard
           title="Completion rate"
-          value={`${user.role === "hr" && departmentReport?.summary ? toNumber(departmentReport.summary.completion_rate).toFixed(1) : userReport ? ((toNumber(userReport.summary.completed_appraisals) / Math.max(toNumber(userReport.summary.appraisal_count), 1)) * 100).toFixed(1) : 0}%`}
+          value={`${hasAdminAccess(user.role) && departmentReport?.summary ? toNumber(departmentReport.summary.completion_rate).toFixed(1) : userReport ? ((toNumber(userReport.summary.completed_appraisals) / Math.max(toNumber(userReport.summary.appraisal_count), 1)) * 100).toFixed(1) : 0}%`}
           note="Signed or completed appraisals"
           tone="slate"
         />
@@ -3497,7 +3548,7 @@ function Reports({
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
           <h4 className="text-lg font-semibold text-slate-900">
-            {user.role === "hr" ? "Department performance by period" : "Performance by review period"}
+            {hasAdminAccess(user.role) ? "Department performance by period" : "Performance by review period"}
           </h4>
           <div className="mt-5 h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -3561,12 +3612,12 @@ function Reports({
         </div>
         <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
           <h4 className="text-lg font-semibold text-slate-900">
-            {user.role === "hr" ? "Department progress" : "Review periods"}
+            {hasAdminAccess(user.role) ? "Department progress" : "Review periods"}
           </h4>
           <div className="mt-5 space-y-4">
-            {(user.role === "hr" ? filteredDepartmentEmployees : filteredUserPeriods).map((item, index) => (
+            {(hasAdminAccess(user.role) ? filteredDepartmentEmployees : filteredUserPeriods).map((item, index) => (
               <div key={index} className="rounded-2xl border border-neutral-200 p-4">
-                {user.role === "hr" ? (
+                {hasAdminAccess(user.role) ? (
                   <>
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-semibold text-slate-900">{(item as DepartmentReportResponse["employees"][number]).name}</p>
@@ -3591,10 +3642,10 @@ function Reports({
                 )}
               </div>
             ))}
-            {user.role === "hr" && !filteredDepartmentEmployees.length && !loading && (
+            {hasAdminAccess(user.role) && !filteredDepartmentEmployees.length && !loading && (
               <div className="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500">No department progress data is available yet.</div>
             )}
-            {user.role !== "hr" && !filteredUserPeriods.length && !loading && (
+            {!hasAdminAccess(user.role) && !filteredUserPeriods.length && !loading && (
               <div className="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500">No review periods have been captured yet.</div>
             )}
           </div>
@@ -3825,7 +3876,7 @@ function SettingsPanel({
 
   return (
     <section className="space-y-6">
-      {user.role === "hr" ? (
+      {hasAdminAccess(user.role) ? (
         <div className="space-y-6">
           <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <div className="flex items-center justify-between gap-4">
@@ -3971,7 +4022,7 @@ function SettingsPanel({
                 >
                   <option value="employee">Employee</option>
                   <option value="manager">Manager</option>
-                  <option value="hr">HR</option>
+                  {user.role === "super_admin" && <option value="hr">HR</option>}
                 </select>
               </label>
               <label className="text-sm">

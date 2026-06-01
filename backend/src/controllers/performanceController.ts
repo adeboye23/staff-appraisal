@@ -22,11 +22,12 @@ import {
 } from "../services/appraisalService.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
+import { hasHrAccess } from "../utils/roles.js";
 
 export const createPerformance = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const data = performanceSchema.parse(req.body);
   const kpi = await ensureKpiExists(data.kpiId);
-  if (req.user?.role !== "hr" && req.user?.id !== kpi.user_id) {
+  if (!hasHrAccess(req.user?.role) && req.user?.id !== kpi.user_id) {
     throw new ApiError(403, "You can only update performance details for your own appraisal.");
   }
   await ensureAppraisalMutable(kpi.appraisal_id);
@@ -135,7 +136,7 @@ export const getComments = asyncHandler(async (req: AuthedRequest, res: Response
 export const selfAppraisal = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const data = selfAppraisalSchema.parse(req.body);
   const kpi = await ensureKpiExists(data.kpiId);
-  if (req.user?.role !== "hr" && req.user?.id !== kpi.user_id) {
+  if (!hasHrAccess(req.user?.role) && req.user?.id !== kpi.user_id) {
     throw new ApiError(403, "You can only complete self-appraisal for your own record.");
   }
   await ensureAppraisalMutable(kpi.appraisal_id);

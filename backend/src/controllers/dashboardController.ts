@@ -3,6 +3,7 @@ import { query } from "../db.js";
 import { AuthedRequest } from "../types.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
+import { hasHrAccess } from "../utils/roles.js";
 
 export const getDashboardSummary = asyncHandler(async (req: AuthedRequest, res: Response) => {
   if (!req.user) {
@@ -149,7 +150,7 @@ export const getNotifications = asyncHandler(async (req: AuthedRequest, res: Res
     throw new ApiError(401, "Authentication required");
   }
 
-  if (req.user.role !== "hr") {
+  if (!hasHrAccess(req.user.role)) {
     return res.json({ data: [] });
   }
 

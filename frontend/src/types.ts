@@ -5,7 +5,7 @@ export type NavItem = {
 
 export type KPIStatus = "Draft" | "Submitted" | "Approved" | "Rejected";
 
-export type Role = "employee" | "manager" | "hr";
+export type Role = "employee" | "manager" | "hr" | "super_admin";
 
 export type AuthUser = {
   id: number;

@@ -42,10 +42,17 @@ export function login(email: string, password: string) {
   });
 }
 
-export function requestPasswordReset(email: string, newPassword: string) {
+export function requestPasswordReset(email: string) {
   return request<{ message: string }>("/auth/reset-password", {
     method: "POST",
-    body: JSON.stringify({ email, newPassword })
+    body: JSON.stringify({ email })
+  });
+}
+
+export function completePasswordReset(email: string, token: string, newPassword: string) {
+  return request<{ message: string }>("/auth/reset-password/complete", {
+    method: "POST",
+    body: JSON.stringify({ email, token, newPassword })
   });
 }
 

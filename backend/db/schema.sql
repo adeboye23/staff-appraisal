@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(120) NOT NULL,
   email VARCHAR(160) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
-  role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'manager', 'hr')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'manager', 'hr', 'super_admin')),
   department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
   manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -89,8 +89,18 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(128) NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);
 CREATE INDEX IF NOT EXISTS idx_kpis_user ON kpis(user_id);
 CREATE INDEX IF NOT EXISTS idx_appraisals_user ON appraisals(user_id);
 CREATE INDEX IF NOT EXISTS idx_comments_kpi ON comments(kpi_id);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_review_periods_single_active ON review_periods ((is_active)) WHERE is_active = TRUE;

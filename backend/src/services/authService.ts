@@ -1,16 +1,18 @@
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { config } from "../config.js";
 import { query } from "../db.js";
-import { AuthUser } from "../types.js";
+import { AuthUser, Role } from "../types.js";
 import { ApiError } from "../utils/ApiError.js";
+import { sendEmail } from "./emailService.js";
 
 type UserRecord = {
   id: number;
   name: string;
   email: string;
   password: string;
-  role: "employee" | "manager" | "hr";
+  role: Role;
   department_id: number | null;
 };
 
@@ -22,7 +24,8 @@ export async function registerUser(input: {
   departmentId?: number | null;
   managerId?: number | null;
 }) {
-  const existing = await query<UserRecord>("SELECT * FROM users WHERE email = $1", [input.email]);
+  const email = input.email.toLowerCase();
+  const existing = await query<UserRecord>("SELECT * FROM users WHERE email = $1", [email]);
   if (existing.rowCount) {
     throw new ApiError(409, "User with this email already exists");
   }
@@ -34,10 +37,32 @@ export async function registerUser(input: {
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id, name, email, role
     `,
-    [input.name, input.email, password, input.role, input.departmentId ?? null, input.managerId ?? null]
+    [input.name, email, password, input.role, input.departmentId ?? null, input.managerId ?? null]
   );
 
   return result.rows[0];
+}
+
+export async function ensureUserRoleConstraint() {
+  await query("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
+  await query(
+    "ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('employee', 'manager', 'hr', 'super_admin'))"
+  );
+}
+
+export async function ensurePasswordResetTokensTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash VARCHAR(128) NOT NULL UNIQUE,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query("CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id)");
 }
 
 export async function createUserAccount(input: {
@@ -48,7 +73,20 @@ export async function createUserAccount(input: {
   departmentId?: number | null;
   managerId?: number | null;
 }) {
-  return registerUser(input);
+  const user = await registerUser(input);
+  await sendEmail({
+    to: input.email,
+    subject: "Your News Central appraisal account is ready",
+    html: `
+      <p>Hello ${input.name},</p>
+      <p>Your News Central appraisal account has been created.</p>
+      <p><strong>Email:</strong> ${input.email}</p>
+      <p><strong>Temporary password:</strong> ${input.password}</p>
+      <p>Please sign in and change your password from Settings.</p>
+    `
+  });
+
+  return user;
 }
 
 export async function updateUserAccount(
@@ -171,12 +209,73 @@ export async function loginUser(email: string, password: string) {
   };
 }
 
-export async function resetPassword(email: string, newPassword: string) {
-  const hashed = await bcrypt.hash(newPassword, 10);
-  const result = await query("UPDATE users SET password = $1 WHERE email = $2", [hashed, email]);
-  if (!result.rowCount) {
-    throw new ApiError(404, "User not found");
+function hashResetToken(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export async function requestPasswordReset(email: string) {
+  const result = await query<UserRecord>("SELECT * FROM users WHERE email = $1", [email.toLowerCase()]);
+  const user = result.rows[0];
+
+  if (!user) {
+    return;
   }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashResetToken(token);
+  await query("UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL", [user.id]);
+  await query(
+    `
+      INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+      VALUES ($1, $2, NOW() + ($3::int * INTERVAL '1 minute'))
+    `,
+    [user.id, tokenHash, config.passwordResetTokenMinutes]
+  );
+
+  const resetUrl = `${config.clientUrl}?resetToken=${encodeURIComponent(token)}&email=${encodeURIComponent(user.email)}`;
+  await sendEmail({
+    to: user.email,
+    subject: "Reset your News Central appraisal password",
+    html: `
+      <p>Hello ${user.name},</p>
+      <p>Use this secure link to reset your News Central appraisal password. It expires in ${config.passwordResetTokenMinutes} minutes.</p>
+      <p><a href="${resetUrl}">Reset password</a></p>
+      <p>If you did not request this, you can ignore this email.</p>
+    `
+  });
+}
+
+export async function resetPasswordWithToken(email: string, token: string, newPassword: string) {
+  const tokenHash = hashResetToken(token);
+  const result = await query<{ id: number }>(
+    `
+      SELECT prt.id
+      FROM password_reset_tokens prt
+      JOIN users u ON u.id = prt.user_id
+      WHERE u.email = $1
+        AND prt.token_hash = $2
+        AND prt.used_at IS NULL
+        AND prt.expires_at > NOW()
+      LIMIT 1
+    `,
+    [email.toLowerCase(), tokenHash]
+  );
+
+  const resetToken = result.rows[0];
+  if (!resetToken) {
+    throw new ApiError(400, "Password reset link is invalid or expired");
+  }
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+  await query(
+    `
+      UPDATE users
+      SET password = $1
+      WHERE email = $2
+    `,
+    [hashed, email.toLowerCase()]
+  );
+  await query("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1", [resetToken.id]);
 }
 
 export async function changePassword(userId: number, currentPassword: string, newPassword: string) {

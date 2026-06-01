@@ -1,7 +1,13 @@
 import { Request, Response } from "express";
-import { changePasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validators/auth.js";
+import {
+  changePasswordSchema,
+  completePasswordResetSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema
+} from "../validators/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { changePassword, loginUser, registerUser, resetPassword } from "../services/authService.js";
+import { changePassword, loginUser, registerUser, requestPasswordReset, resetPasswordWithToken } from "../services/authService.js";
 import { logAudit } from "../utils/audit.js";
 import { AuthedRequest } from "../types.js";
 
@@ -42,7 +48,13 @@ export const logout = asyncHandler(async (req: AuthedRequest, res: Response) => 
 
 export const reset = asyncHandler(async (req: Request, res: Response) => {
   const data = resetPasswordSchema.parse(req.body);
-  await resetPassword(data.email, data.newPassword);
+  await requestPasswordReset(data.email);
+  res.json({ message: "If the email exists, a password reset link has been sent." });
+});
+
+export const completeReset = asyncHandler(async (req: Request, res: Response) => {
+  const data = completePasswordResetSchema.parse(req.body);
+  await resetPasswordWithToken(data.email, data.token, data.newPassword);
   res.json({ message: "Password reset successfully" });
 });
 

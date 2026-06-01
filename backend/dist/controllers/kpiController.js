@@ -4,9 +4,10 @@ import { createKpiSchema, updateKpiSchema, approveKpiSchema } from "../validator
 import { ApiError } from "../utils/ApiError.js";
 import { ensureAdditionalKpiCapacity, ensureAppraisalWithinReviewDate, ensureKpiEditable, ensureKpiExists, getOrCreateActiveAppraisal, getOrCreateAppraisal } from "../services/appraisalService.js";
 import { logAudit } from "../utils/audit.js";
+import { hasHrAccess } from "../utils/roles.js";
 export const createKpi = asyncHandler(async (req, res) => {
     const data = createKpiSchema.parse(req.body);
-    if (req.user?.role !== "hr" && req.user?.id !== data.userId) {
+    if (!hasHrAccess(req.user?.role) && req.user?.id !== data.userId) {
         throw new ApiError(403, "You can only create KPIs for your own account.");
     }
     const appraisal = data.appraisalId
@@ -62,7 +63,7 @@ export const updateKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const data = updateKpiSchema.parse(req.body);
     const existing = await ensureKpiEditable(kpiId);
-    if (req.user?.role !== "hr" && req.user?.id !== existing.user_id) {
+    if (!hasHrAccess(req.user?.role) && req.user?.id !== existing.user_id) {
         throw new ApiError(403, "You can only update your own KPIs.");
     }
     const result = await query(`
@@ -87,7 +88,7 @@ export const updateKpi = asyncHandler(async (req, res) => {
 export const deleteKpi = asyncHandler(async (req, res) => {
     const kpiId = Number(req.params.id);
     const existing = await ensureKpiEditable(kpiId);
-    if (req.user?.role !== "hr" && req.user?.id !== existing.user_id) {
+    if (!hasHrAccess(req.user?.role) && req.user?.id !== existing.user_id) {
         throw new ApiError(403, "You can only delete your own KPIs.");
     }
     const result = await query("DELETE FROM kpis WHERE id = $1 RETURNING id", [kpiId]);

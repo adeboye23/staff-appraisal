@@ -12,6 +12,7 @@
     "dev:backend": "npm run dev --workspace backend",
     "build": "npm run build --workspace frontend && npm run build --workspace backend",
     "lint": "npm run lint --workspace frontend && npm run lint --workspace backend",
+    "seed:super-admin": "npm run seed:super-admin --workspace backend",
     "reset:live-test": "npm run reset:live-test --workspace backend"
   }
 }

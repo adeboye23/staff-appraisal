@@ -73,6 +73,9 @@ export const config = {
     databaseUrl: normalizeDatabaseUrl(process.env.DATABASE_URL || ""),
     jwtSecret: process.env.JWT_SECRET || "change_me",
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
+    passwordResetTokenMinutes: Number(process.env.PASSWORD_RESET_TOKEN_MINUTES || 30),
+    resendApiKey: process.env.RESEND_API_KEY || "",
+    emailFrom: process.env.EMAIL_FROM || "News Central Appraisal <no-reply@newscentral.com>",
     clientUrl: clientUrls[0] || "http://localhost:5173",
     clientUrls
 };

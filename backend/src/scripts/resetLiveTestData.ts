@@ -53,9 +53,9 @@ async function main() {
       [obehi.name, obehi.email, fallbackPasswordHash, obehi.role, obehi.department]
     );
 
-    await query("DELETE FROM users WHERE email <> $1", [obehi.email]);
+    await query("DELETE FROM users WHERE email <> $1 AND role <> 'super_admin'", [obehi.email]);
     await query("COMMIT");
-    console.log("Live test data reset complete. Only Obehi HR remains, with no active review period.");
+    console.log("Live test data reset complete. Obehi HR and super admins remain, with no active review period.");
   } catch (error) {
     await query("ROLLBACK").catch(() => undefined);
     throw error;
