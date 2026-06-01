@@ -249,7 +249,7 @@ export function getDepartments(token: string) {
 }
 
 export function getReviewPeriods(token: string) {
-  return request<{ data: ReviewPeriod[]; active: ReviewPeriod }>("/review-periods", { method: "GET" }, token);
+  return request<{ data: ReviewPeriod[]; active: ReviewPeriod | null }>("/review-periods", { method: "GET" }, token);
 }
 
 export function createReviewPeriod(

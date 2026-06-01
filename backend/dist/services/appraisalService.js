@@ -97,6 +97,9 @@ export async function getOrCreateAppraisal(userId, period, reviewDate) {
 }
 export async function getOrCreateActiveAppraisal(userId) {
     const activePeriod = await getActiveReviewPeriod();
+    if (!activePeriod) {
+        throw new ApiError(400, "Create an active review period before adding KPIs.");
+    }
     return getOrCreateAppraisal(userId, activePeriod.name, activePeriod.ends_on ?? null);
 }
 export async function assertKpiWeightTotal(appraisalId, userId, nextWeight, excludeKpiId) {

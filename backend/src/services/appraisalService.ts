@@ -169,6 +169,10 @@ export async function getOrCreateAppraisal(userId: number, period: string, revie
 
 export async function getOrCreateActiveAppraisal(userId: number) {
   const activePeriod = await getActiveReviewPeriod();
+  if (!activePeriod) {
+    throw new ApiError(400, "Create an active review period before adding KPIs.");
+  }
+
   return getOrCreateAppraisal(userId, activePeriod.name, activePeriod.ends_on ?? null);
 }
 

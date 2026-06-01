@@ -12,7 +12,7 @@ async function main() {
     const fallbackPasswordHash = await bcrypt.hash("password", 10);
     try {
         await query("BEGIN");
-        await query("TRUNCATE TABLE comments, performance, kpis, appraisals, audit_logs RESTART IDENTITY CASCADE");
+        await query("TRUNCATE TABLE comments, performance, kpis, appraisals, review_periods, audit_logs RESTART IDENTITY CASCADE");
         await query(`
         INSERT INTO departments (name)
         VALUES ($1)
@@ -39,7 +39,7 @@ async function main() {
       `, [obehi.name, obehi.email, fallbackPasswordHash, obehi.role, obehi.department]);
         await query("DELETE FROM users WHERE email <> $1", [obehi.email]);
         await query("COMMIT");
-        console.log("Live test data reset complete. Only Obehi HR remains.");
+        console.log("Live test data reset complete. Only Obehi HR remains, with no active review period.");
     }
     catch (error) {
         await query("ROLLBACK").catch(() => undefined);

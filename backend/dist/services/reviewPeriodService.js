@@ -1,6 +1,5 @@
 import { query } from "../db.js";
 import { ApiError } from "../utils/ApiError.js";
-const DEFAULT_REVIEW_PERIOD = "2026 Annual Review";
 export async function ensureReviewPeriodsTable() {
     await query(`
     CREATE TABLE IF NOT EXISTS review_periods (
@@ -18,23 +17,11 @@ export async function ensureReviewPeriodsTable() {
     ON review_periods ((is_active))
     WHERE is_active = TRUE
   `);
-    const existing = await query("SELECT id, name, is_active, starts_on::text, ends_on::text FROM review_periods ORDER BY id ASC LIMIT 1");
-    if (!existing.rows.length) {
-        await query(`
-        INSERT INTO review_periods (name, is_active)
-        VALUES ($1, TRUE)
-      `, [DEFAULT_REVIEW_PERIOD]);
+    const active = await query("SELECT id FROM review_periods WHERE is_active = TRUE LIMIT 1");
+    if (active.rows.length) {
+        return;
     }
-    else {
-        const active = await query("SELECT id FROM review_periods WHERE is_active = TRUE LIMIT 1");
-        if (!active.rows.length) {
-            await query(`
-          UPDATE review_periods
-          SET is_active = CASE WHEN id = $1 THEN TRUE ELSE FALSE END,
-              updated_at = NOW()
-        `, [existing.rows[0].id]);
-        }
-    }
+    await query("UPDATE review_periods SET is_active = FALSE, updated_at = NOW()");
 }
 export async function listReviewPeriods() {
     const result = await query(`
@@ -51,10 +38,7 @@ export async function getActiveReviewPeriod() {
       WHERE is_active = TRUE
       LIMIT 1
     `);
-    if (!result.rows[0]) {
-        throw new ApiError(500, "No active review period configured");
-    }
-    return result.rows[0];
+    return result.rows[0] ?? null;
 }
 export async function createReviewPeriod(input) {
     if (input.isActive) {
