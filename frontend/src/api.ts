@@ -255,6 +255,33 @@ export function getDepartments(token: string) {
   return request<{ data: Department[] }>("/users/departments", { method: "GET" }, token);
 }
 
+export function createDepartment(token: string, name: string) {
+  return request<{ department: Department }>(
+    "/users/departments",
+    { method: "POST", body: JSON.stringify({ name }) },
+    token
+  );
+}
+
+export function bulkOnboardStaff(
+  token: string,
+  payload: {
+    departmentId: number;
+    emails: string[];
+    role?: "employee" | "manager";
+    managerId?: number | null;
+  }
+) {
+  return request<{
+    created: Array<{ id: number; name: string; email: string; role: Role }>;
+    skipped: Array<{ email: string; reason: string }>;
+  }>(
+    "/users/bulk-onboard",
+    { method: "POST", body: JSON.stringify(payload) },
+    token
+  );
+}
+
 export function getReviewPeriods(token: string) {
   return request<{ data: ReviewPeriod[]; active: ReviewPeriod | null }>("/review-periods", { method: "GET" }, token);
 }

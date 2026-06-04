@@ -1,20 +1,28 @@
 import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
+  Building2,
   BriefcaseBusiness,
   ChevronDown,
+  CheckCircle2,
   ClipboardCheck,
   Download,
   FileBarChart2,
   LayoutDashboard,
+  Lock,
   LogOut,
+  Mail,
   Menu,
   Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Target,
   TrendingUp,
+  UserCog,
   Users,
+  Workflow,
+  Wrench,
   X
 } from "lucide-react";
 import {
@@ -35,8 +43,10 @@ import {
 import jsPDF from "jspdf";
 import {
   approveKpi as approveKpiRequest,
+  bulkOnboardStaff,
   changePassword as changePasswordRequest,
   completePasswordReset,
+  createDepartment as createDepartmentRequest,
   createReviewPeriod as createReviewPeriodRequest,
   createStaff,
   createKpi as createKpiRequest,
@@ -221,6 +231,16 @@ function toNumber(value: string | number | null | undefined) {
 
 function toScorePercent(value: string | number | null | undefined) {
   return Number((toNumber(value) * 20).toFixed(1));
+}
+
+function getAggregateFinalScore(kpis: Kpi[]) {
+  if (!kpis.length || kpis.some((item) => item.finalScore === undefined)) {
+    return null;
+  }
+
+  const weightedTotal = kpis.reduce((total, item) => total + (item.finalScore ?? 0) * Math.max(item.weight, 1), 0);
+  const totalWeight = kpis.reduce((total, item) => total + Math.max(item.weight, 1), 0);
+  return Number((weightedTotal / Math.max(totalWeight, 1)).toFixed(2));
 }
 
 function isReviewDateOpen(reviewDate?: string | null) {
@@ -868,7 +888,10 @@ function App() {
     try {
       await submitManagerScore(token, { kpiId, managerScore, comment: undefined });
       await refreshProfileData();
-      setAppraisalFeedback({ tone: "success", message: "Manager score saved." });
+      setAppraisalFeedback({
+        tone: "success",
+        message: "Manager score submitted, locked, and sent to the staff member for the physical review discussion."
+      });
     } catch (error) {
       setAppraisalFeedback({
         tone: "error",
@@ -2347,6 +2370,7 @@ function AppraisalFlow({
   const [achievementInputs, setAchievementInputs] = useState<Record<number, string>>({});
   const [managerScoreInputs, setManagerScoreInputs] = useState<Record<number, string>>({});
   const [finalScoreInputs, setFinalScoreInputs] = useState<Record<number, string>>({});
+  const [finalAgreementInputs, setFinalAgreementInputs] = useState<Record<number, boolean>>({});
   const [directorOverallInputs, setDirectorOverallInputs] = useState<Record<number, string>>({});
   const [directorImprovementInputs, setDirectorImprovementInputs] = useState<Record<number, string>>({});
   const [directorTrainingInputs, setDirectorTrainingInputs] = useState<Record<number, string>>({});
@@ -2413,6 +2437,16 @@ function AppraisalFlow({
   }, [approvedKpis]);
 
   useEffect(() => {
+    setFinalAgreementInputs((current) => {
+      const next: Record<number, boolean> = {};
+      approvedKpis.forEach((item) => {
+        next[item.id] = item.finalScore !== undefined || Boolean(current[item.id]);
+      });
+      return next;
+    });
+  }, [approvedKpis]);
+
+  useEffect(() => {
     setDirectorOverallInputs((current) => {
       const next: Record<number, string> = {};
       approvedKpis.forEach((item) => {
@@ -2459,8 +2493,10 @@ function AppraisalFlow({
     return date;
   };
 
-  const pastReviewDates = approvedKpis.filter((item) => !isReviewDateOpen(item.appraisalReviewDate)).length;
   const completedReviewStage = approvedKpis.filter((item) => item.selfScore !== undefined).length;
+  const lockedManagerScores = approvedKpis.filter((item) => item.managerScoreLocked).length;
+  const completedFinalScores = approvedKpis.filter((item) => item.finalScore !== undefined).length;
+  const aggregateScore = getAggregateFinalScore(approvedKpis);
 
   const toggleKpiDetails = (kpiId: number) => {
     setExpandedKpiId((current) => (current === kpiId ? null : kpiId));
@@ -2470,9 +2506,9 @@ function AppraisalFlow({
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <MetricCard title="Approved KPIs" value={String(approvedKpis.length)} note={`Manager-approved KPIs for ${profileName}`} tone="slate" />
-        <MetricCard title="Target Scores" value={String(approvedKpis.filter((item) => item.targetSelfScore !== undefined).length)} note="Initial employee target scores already recorded" tone="amber" />
-        <MetricCard title="Review Stage Done" value={String(completedReviewStage)} note="Employee review stage completed" tone="indigo" />
-        <MetricCard title="Past Review Date" value={String(pastReviewDates)} note="Items beyond their review date" tone="green" />
+        <MetricCard title="Review Stage" value={`${completedReviewStage}/${approvedKpis.length || 0}`} note="Employee review stages completed" tone="amber" />
+        <MetricCard title="Manager Locks" value={`${lockedManagerScores}/${approvedKpis.length || 0}`} note="Submitted scores are locked automatically" tone="indigo" />
+        <MetricCard title="Overall Score" value={aggregateScore === null ? "--" : `${aggregateScore.toFixed(2)}/5`} note={aggregateScore === null ? `${completedFinalScores}/${approvedKpis.length || 0} final scores completed` : "Aggregate weighted final score"} tone="green" />
       </div>
 
       {feedback && (
@@ -2487,18 +2523,23 @@ function AppraisalFlow({
         </div>
       )}
 
-      <section className="rounded-[32px] bg-white p-6 shadow-sm ring-1 ring-black/5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <section className="rounded-[32px] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 className="text-xl font-semibold text-slate-900">Appraisal register</h3>
-            <p className="text-sm text-slate-500">A cleaner appraisal view built around the review date, scoring progress, and final director feedback.</p>
+            <p className="text-sm text-slate-500">Track review readiness, locked manager scores, agreed final scores, and director feedback in one clean flow.</p>
           </div>
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Select a KPI to open its appraisal directly inside the register.
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 sm:text-sm">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-slate-700 shadow-sm ring-1 ring-slate-200">
+              <Lock size={14} /> Manager lock
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-slate-700 shadow-sm ring-1 ring-slate-200">
+              <CheckCircle2 size={14} /> Final agreement
+            </span>
           </div>
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200">
+        <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
           {approvedKpis.length ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200">
@@ -2538,6 +2579,12 @@ function AppraisalFlow({
                       reviewOpen &&
                       item.managerScore !== undefined &&
                       item.finalScore === undefined;
+                    const stageSteps = [
+                      { label: "Target", done: item.targetSelfScore !== undefined },
+                      { label: "Employee review", done: item.selfScore !== undefined },
+                      { label: "Manager locked", done: item.managerScoreLocked },
+                      { label: "Final agreed", done: item.finalScore !== undefined }
+                    ];
                     const canDirectorReview =
                       hasAdminAccess(user.role) &&
                       !isOwnProfile &&
@@ -2549,6 +2596,7 @@ function AppraisalFlow({
                     const achievementInput = achievementInputs[item.id] ?? "";
                     const managerScoreInput = managerScoreInputs[item.id] ?? "";
                     const finalScoreInput = finalScoreInputs[item.id] ?? "";
+                    const finalAgreementConfirmed = finalAgreementInputs[item.id] ?? false;
                     const directorOverallInput = item.appraisalId ? directorOverallInputs[item.appraisalId] ?? "" : "";
                     const directorImprovementInput = item.appraisalId ? directorImprovementInputs[item.appraisalId] ?? "" : "";
                     const directorTrainingInput = item.appraisalId ? directorTrainingInputs[item.appraisalId] ?? "" : "";
@@ -2580,7 +2628,11 @@ function AppraisalFlow({
                             {item.selfScore !== undefined ? `${item.selfScore.toFixed(1)}/5` : reviewOpen ? "Awaiting employee" : "--"}
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-600">
-                            {item.managerScore !== undefined ? `${item.managerScore.toFixed(1)}/5` : item.selfScore !== undefined ? "Pending" : "--"}
+                            {item.managerScore !== undefined ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                <Lock size={12} /> {item.managerScore.toFixed(1)}/5
+                              </span>
+                            ) : item.selfScore !== undefined ? "Pending" : "--"}
                           </td>
                           <td className="px-4 py-4 text-sm text-slate-600">
                             {item.finalScore !== undefined ? `${item.finalScore.toFixed(1)}/5` : item.managerScore !== undefined ? "Pending" : "--"}
@@ -2589,12 +2641,25 @@ function AppraisalFlow({
                         {isExpanded && (
                           <tr className="bg-[#fcfcfd]">
                             <td colSpan={7} className="p-0">
-                              <div className="m-4 rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+                              <div className="m-3 rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:m-4 sm:p-6">
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                   <div>
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Selected appraisal</p>
                                     <h4 className="mt-2 text-xl font-semibold text-slate-900">{item.title}</h4>
                                     <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{item.description || "No objective note recorded for this KPI."}</p>
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {stageSteps.map((step) => (
+                                        <span
+                                          key={step.label}
+                                          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                                            step.done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                                          }`}
+                                        >
+                                          {step.done ? <CheckCircle2 size={13} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                                          {step.label}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
                                   <div className="grid grid-cols-2 gap-3 lg:min-w-[340px]">
                                     <SnapshotRow label="Cycle" value={item.appraisalPeriod || "--"} />
@@ -2712,7 +2777,19 @@ function AppraisalFlow({
 
                                   <div className="grid gap-5">
                                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                                      <p className="text-base font-semibold text-slate-900">Manager and final scoring</p>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                          <p className="text-base font-semibold text-slate-900">Manager and final scoring</p>
+                                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                                            Manager scores lock on submission. Staff and manager then discuss the result physically before the agreed final score is submitted.
+                                          </p>
+                                        </div>
+                                        {item.managerScoreLocked ? (
+                                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                            <Lock size={13} /> Locked
+                                          </span>
+                                        ) : null}
+                                      </div>
                                       {(canManagerScore || item.managerScore !== undefined || canSubmitFinalScore || item.finalScore !== undefined) ? (
                                         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                                           <label className="block text-sm">
@@ -2771,13 +2848,30 @@ function AppraisalFlow({
                                           </label>
                                           <div className="flex items-end">
                                             <button
-                                              disabled={!canSubmitFinalScore || actionState.kind !== null || finalScoreInput === ""}
+                                              disabled={!canSubmitFinalScore || actionState.kind !== null || finalScoreInput === "" || !finalAgreementConfirmed}
                                               className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
                                               onClick={() => void onSubmitFinalScore(item.id, Number(finalScoreInput))}
                                             >
                                               {actionState.kind === "finalScore" && actionState.kpiId === item.id ? "Saving..." : "Save final score"}
                                             </button>
                                           </div>
+                                          <label className="flex items-start gap-3 rounded-2xl border border-neutral-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 md:col-span-2">
+                                            <input
+                                              type="checkbox"
+                                              className="mt-1 h-4 w-4 accent-brand"
+                                              checked={finalAgreementConfirmed}
+                                              disabled={!canSubmitFinalScore || item.finalScore !== undefined}
+                                              onChange={(event) =>
+                                                setFinalAgreementInputs((current) => ({
+                                                  ...current,
+                                                  [item.id]: event.target.checked
+                                                }))
+                                              }
+                                            />
+                                            <span>
+                                              Staff and manager have physically discussed this KPI and agreed that this is the final score.
+                                            </span>
+                                          </label>
                                         </div>
                                       ) : (
                                         <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -3712,10 +3806,21 @@ function SettingsPanel({
     endsOn: "",
     isActive: true
   });
+  const [departmentForm, setDepartmentForm] = useState({ name: "" });
+  const [bulkForm, setBulkForm] = useState({
+    departmentId: "",
+    role: "employee" as "employee" | "manager",
+    managerId: "",
+    emails: ""
+  });
   const [staffStatus, setStaffStatus] = useState("");
   const [staffError, setStaffError] = useState("");
   const [periodStatus, setPeriodStatus] = useState("");
   const [periodError, setPeriodError] = useState("");
+  const [departmentStatus, setDepartmentStatus] = useState("");
+  const [departmentError, setDepartmentError] = useState("");
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkError, setBulkError] = useState("");
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -3725,11 +3830,35 @@ function SettingsPanel({
   const [passwordError, setPasswordError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [periodSubmitting, setPeriodSubmitting] = useState(false);
+  const [departmentSubmitting, setDepartmentSubmitting] = useState(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const managers = staff.filter((member) => member.role === "manager");
   const reportingLeaders = staff.filter(
     (member) => member.role !== "employee" && member.id !== editingId
   );
+  const controlCenterItems = [
+    {
+      icon: SlidersHorizontal,
+      title: "Workflow configuration",
+      description: "Tune appraisal stages, manager locks, agreement checkpoints, and director-review readiness."
+    },
+    {
+      icon: ShieldCheck,
+      title: "Permissions and access",
+      description: "Maintain HR access, manager hierarchy, elevated roles, and protected super admin accounts."
+    },
+    {
+      icon: UserCog,
+      title: "User corrections",
+      description: "Repair department assignments, manager links, email details, and password access without database work."
+    },
+    {
+      icon: Wrench,
+      title: "Admin maintenance",
+      description: "Keep review periods, onboarding, account recovery, and system clean-up in one backend settings area."
+    }
+  ];
 
   const resetForm = () => {
     setForm({
@@ -3874,6 +4003,65 @@ function SettingsPanel({
     }
   };
 
+  const handleCreateDepartment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setDepartmentSubmitting(true);
+    setDepartmentStatus("");
+    setDepartmentError("");
+
+    try {
+      await createDepartmentRequest(token, departmentForm.name);
+      await onDirectoryRefresh();
+      setDepartmentForm({ name: "" });
+      setDepartmentStatus("Department is ready for staff onboarding.");
+    } catch (createError) {
+      setDepartmentError(createError instanceof Error ? createError.message : "Unable to create department");
+    } finally {
+      setDepartmentSubmitting(false);
+    }
+  };
+
+  const handleBulkOnboard = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBulkSubmitting(true);
+    setBulkStatus("");
+    setBulkError("");
+
+    try {
+      const emails = bulkForm.emails
+        .split(/[\n,;]+/)
+        .map((email) => email.trim())
+        .filter(Boolean);
+
+      if (!bulkForm.departmentId) {
+        throw new Error("Select a department before onboarding staff.");
+      }
+
+      if (!emails.length) {
+        throw new Error("Paste at least one staff email.");
+      }
+
+      const result = await bulkOnboardStaff(token, {
+        departmentId: Number(bulkForm.departmentId),
+        emails,
+        role: bulkForm.role,
+        managerId: bulkForm.managerId ? Number(bulkForm.managerId) : null
+      });
+
+      await onDirectoryRefresh();
+      setBulkForm((current) => ({ ...current, emails: "" }));
+      setBulkStatus(
+        `${result.created.length} account${result.created.length === 1 ? "" : "s"} created and emailed.${
+          result.skipped.length ? ` ${result.skipped.length} skipped because they already exist or could not be sent.` : ""
+        }`
+      );
+    } catch (onboardError) {
+      setBulkError(onboardError instanceof Error ? onboardError.message : "Unable to complete bulk onboarding");
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
   const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPasswordSubmitting(true);
@@ -3903,6 +4091,37 @@ function SettingsPanel({
     <section className="space-y-6">
       {hasAdminAccess(user.role) ? (
         <div className="space-y-6">
+          {user.role === "super_admin" && (
+            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Super Admin Control Center</p>
+                  <h3 className="mt-2 text-xl font-semibold text-slate-900">Backend settings and maintenance</h3>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                    Configure the system, repair user records, manage access, and keep appraisal workflows healthy without touching the database directly.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+                  <Workflow size={16} /> Settings mode
+                </span>
+              </div>
+              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {controlCenterItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.title} className="rounded-2xl border border-neutral-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-brand shadow-sm ring-1 ring-slate-200">
+                        <Icon size={18} />
+                      </div>
+                      <h4 className="mt-4 font-semibold text-slate-900">{item.title}</h4>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">{item.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -3997,11 +4216,150 @@ function SettingsPanel({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-brand ring-1 ring-slate-200">
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Department management</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">Create departments first, then onboard staff into the correct team.</p>
+                </div>
+              </div>
+              <form className="mt-5 space-y-4" onSubmit={handleCreateDepartment}>
+                <label className="block text-sm">
+                  <span className="mb-2 block font-medium text-slate-700">Department name</span>
+                  <input
+                    value={departmentForm.name}
+                    onChange={(event) => setDepartmentForm({ name: event.target.value })}
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    placeholder="Newsroom Operations"
+                  />
+                </label>
+                {(departmentStatus || departmentError) && (
+                  <div
+                    className={`rounded-2xl px-4 py-3 text-sm ${
+                      departmentError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
+                    {departmentError || departmentStatus}
+                  </div>
+                )}
+                <button
+                  disabled={departmentSubmitting || departmentForm.name.trim().length < 2}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                >
+                  <Building2 size={16} />
+                  {departmentSubmitting ? "Saving..." : "Create department"}
+                </button>
+              </form>
+              <div className="mt-6 grid grid-cols-1 gap-2">
+                {departments.map((department) => (
+                  <div key={department.id} className="flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3">
+                    <span className="font-semibold text-slate-900">{department.name}</span>
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Active</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-brand ring-1 ring-slate-200">
+                    <Mail size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Batch staff onboarding</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">Paste staff emails, choose their department, and the system sends generated temporary login credentials.</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Email credentials enabled</span>
+              </div>
+              <form className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleBulkOnboard}>
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-slate-700">Department</span>
+                  <select
+                    value={bulkForm.departmentId}
+                    onChange={(event) => setBulkForm((current) => ({ ...current, departmentId: event.target.value }))}
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  >
+                    <option value="">Select department</option>
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-slate-700">Role</span>
+                  <select
+                    value={bulkForm.role}
+                    onChange={(event) => setBulkForm((current) => ({ ...current, role: event.target.value as "employee" | "manager" }))}
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  >
+                    <option value="employee">Employee</option>
+                    <option value="manager">Manager</option>
+                  </select>
+                </label>
+                {(bulkForm.role === "employee" || bulkForm.role === "manager") && (
+                  <label className="text-sm md:col-span-2">
+                    <span className="mb-2 block font-medium text-slate-700">
+                      {bulkForm.role === "manager" ? "Director / supervisor" : "Line manager"}
+                    </span>
+                    <select
+                      value={bulkForm.managerId}
+                      onChange={(event) => setBulkForm((current) => ({ ...current, managerId: event.target.value }))}
+                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    >
+                      <option value="">{bulkForm.role === "manager" ? "Select director / supervisor" : "Select line manager"}</option>
+                      {(bulkForm.role === "manager" ? staff.filter((member) => member.role !== "employee") : managers).map((manager) => (
+                        <option key={manager.id} value={manager.id}>
+                          {getDisplayNameFromStaff(manager)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="text-sm md:col-span-2">
+                  <span className="mb-2 block font-medium text-slate-700">Staff emails</span>
+                  <textarea
+                    rows={6}
+                    value={bulkForm.emails}
+                    onChange={(event) => setBulkForm((current) => ({ ...current, emails: event.target.value }))}
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    placeholder="one@company.com, two@company.com&#10;three@company.com"
+                  />
+                </label>
+                {(bulkStatus || bulkError) && (
+                  <div
+                    className={`rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
+                      bulkError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
+                    {bulkError || bulkStatus}
+                  </div>
+                )}
+                <div className="md:col-span-2">
+                  <button
+                    disabled={bulkSubmitting}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                  >
+                    <Mail size={16} />
+                    {bulkSubmitting ? "Sending credentials..." : "Generate passwords and send invites"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
           <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">User management</h3>
-                <p className="text-sm text-slate-500">Create and maintain real staff accounts for the live system.</p>
+                <p className="text-sm text-slate-500">Use this for corrections and individual account maintenance after batch onboarding.</p>
               </div>
               {editingId && (
                 <button

@@ -23,6 +23,7 @@ import {
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 import { hasHrAccess } from "../utils/roles.js";
+import { sendEmail } from "../services/emailService.js";
 
 export const createPerformance = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const data = performanceSchema.parse(req.body);
@@ -256,6 +257,32 @@ export const managerScore = asyncHandler(async (req: AuthedRequest, res: Respons
       [req.user?.id, data.kpiId, data.comment.trim()]
     );
   }
+
+  const employee = await query<{ name: string; email: string; title: string }>(
+    `
+      SELECT u.name, u.email, k.title
+      FROM kpis k
+      JOIN users u ON u.id = k.user_id
+      WHERE k.id = $1
+      LIMIT 1
+    `,
+    [data.kpiId]
+  );
+  const recipient = employee.rows[0];
+  if (recipient) {
+    await sendEmail({
+      to: recipient.email,
+      subject: "Manager score submitted for your appraisal",
+      html: `
+        <p>Hello ${recipient.name},</p>
+        <p>Your manager has submitted and locked the manager score for <strong>${recipient.title}</strong>.</p>
+        <p>Please meet with your manager to discuss the score and agree on the final score before final submission.</p>
+      `
+    }).catch((error) => {
+      console.error("Manager score notification failed", error);
+    });
+  }
+
   await logAudit({
     actorUserId: req.user?.id ?? null,
     action: "performance.manager_score",

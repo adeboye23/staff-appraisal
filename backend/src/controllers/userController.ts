@@ -1,11 +1,18 @@
 import { Response } from "express";
+import crypto from "node:crypto";
 import { query } from "../db.js";
 import { AuthedRequest } from "../types.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 import { hasHrAccess } from "../utils/roles.js";
-import { createUserSchema, resetUserPasswordSchema, updateUserSchema } from "../validators/user.js";
+import {
+  bulkOnboardSchema,
+  createDepartmentSchema,
+  createUserSchema,
+  resetUserPasswordSchema,
+  updateUserSchema
+} from "../validators/user.js";
 import {
   createUserAccount,
   deleteUserAccount,
@@ -90,6 +97,28 @@ export const listDepartments = asyncHandler(async (_req: AuthedRequest, res: Res
   res.json({ data: result.rows });
 });
 
+export const createDepartment = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const data = createDepartmentSchema.parse(req.body);
+  const result = await query<{ id: number; name: string }>(
+    `
+      INSERT INTO departments (name)
+      VALUES ($1)
+      ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+      RETURNING id, name
+    `,
+    [data.name.trim()]
+  );
+
+  await logAudit({
+    actorUserId: req.user?.id ?? null,
+    action: "department.create",
+    entityType: "department",
+    entityId: result.rows[0].id
+  });
+
+  res.status(201).json({ department: result.rows[0] });
+});
+
 async function ensureCanManageTargetUser(actorRole: string | undefined, userId: number) {
   if (actorRole === "super_admin") {
     return;
@@ -116,6 +145,61 @@ export const createStaff = asyncHandler(async (req: AuthedRequest, res: Response
     metadata: { role: data.role }
   });
   res.status(201).json({ user });
+});
+
+function generateTemporaryPassword() {
+  return `NC-${crypto.randomBytes(4).toString("hex")}-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+function nameFromEmail(email: string) {
+  return email
+    .split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export const bulkOnboardStaff = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const data = bulkOnboardSchema.parse(req.body);
+  const uniqueEmails = Array.from(new Set(data.emails.map((email) => email.toLowerCase().trim())));
+  const created: Array<{ id: number; name: string; email: string; role: string }> = [];
+  const skipped: Array<{ email: string; reason: string }> = [];
+
+  const department = await query("SELECT id FROM departments WHERE id = $1", [data.departmentId]);
+  if (!department.rowCount) {
+    throw new ApiError(404, "Department not found");
+  }
+
+  for (const email of uniqueEmails) {
+    const temporaryPassword = generateTemporaryPassword();
+    try {
+      const user = await createUserAccount({
+        name: nameFromEmail(email) || email,
+        email,
+        password: temporaryPassword,
+        role: data.role,
+        departmentId: data.departmentId,
+        managerId: data.role === "employee" || data.role === "manager" ? data.managerId ?? null : null
+      });
+      created.push(user);
+      await logAudit({
+        actorUserId: req.user?.id ?? null,
+        action: "user.bulk_onboard",
+        entityType: "user",
+        entityId: user.id,
+        metadata: { departmentId: data.departmentId, role: data.role }
+      });
+    } catch (error) {
+      skipped.push({
+        email,
+        reason: error instanceof Error ? error.message : "Unable to onboard this email"
+      });
+    }
+  }
+
+  res.status(201).json({ created, skipped });
 });
 
 export const updateStaff = asyncHandler(async (req: AuthedRequest, res: Response) => {

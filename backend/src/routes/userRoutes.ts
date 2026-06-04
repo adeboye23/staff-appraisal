@@ -1,5 +1,7 @@
 import { Router } from "express";
 import {
+  bulkOnboardStaff,
+  createDepartment,
   createStaff,
   deleteStaff,
   listDepartments,
@@ -13,6 +15,8 @@ const router = Router();
 
 router.use(requireAuth);
 router.get("/departments", requireRole("hr"), listDepartments);
+router.post("/departments", requireRole("hr"), createDepartment);
+router.post("/bulk-onboard", requireRole("hr"), bulkOnboardStaff);
 router.get("/", listStaff);
 router.post("/", requireRole("hr"), createStaff);
 router.put("/:id", requireRole("hr"), updateStaff);

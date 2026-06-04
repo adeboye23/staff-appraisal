@@ -20,3 +20,14 @@ export const updateUserSchema = z.object({
 export const resetUserPasswordSchema = z.object({
   newPassword: z.string().min(8)
 });
+
+export const createDepartmentSchema = z.object({
+  name: z.string().min(2).max(80)
+});
+
+export const bulkOnboardSchema = z.object({
+  departmentId: z.number().int().positive(),
+  emails: z.array(z.string().email()).min(1).max(100),
+  role: z.enum(["employee", "manager"]).default("employee"),
+  managerId: z.number().int().positive().nullable().optional()
+});
