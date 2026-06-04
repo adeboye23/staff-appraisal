@@ -263,6 +263,18 @@ export function createDepartment(token: string, name: string) {
   );
 }
 
+export function updateDepartment(token: string, departmentId: number, name: string) {
+  return request<{ department: Department }>(
+    `/users/departments/${departmentId}`,
+    { method: "PUT", body: JSON.stringify({ name }) },
+    token
+  );
+}
+
+export function deleteDepartment(token: string, departmentId: number) {
+  return request<{}>(`/users/departments/${departmentId}`, { method: "DELETE" }, token);
+}
+
 export function bulkOnboardStaff(
   token: string,
   payload: {
@@ -275,6 +287,7 @@ export function bulkOnboardStaff(
   return request<{
     created: Array<{ id: number; name: string; email: string; role: Role }>;
     skipped: Array<{ email: string; reason: string }>;
+    emailDeliveryConfigured?: boolean;
   }>(
     "/users/bulk-onboard",
     { method: "POST", body: JSON.stringify(payload) },

@@ -1,10 +1,12 @@
 import { Router } from "express";
-import { bulkOnboardStaff, createDepartment, createStaff, deleteStaff, listDepartments, listStaff, resetStaffPassword, updateStaff } from "../controllers/userController.js";
+import { bulkOnboardStaff, createDepartment, createStaff, deleteDepartment, deleteStaff, listDepartments, listStaff, resetStaffPassword, updateDepartment, updateStaff } from "../controllers/userController.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 const router = Router();
 router.use(requireAuth);
 router.get("/departments", requireRole("hr"), listDepartments);
 router.post("/departments", requireRole("hr"), createDepartment);
+router.put("/departments/:id", requireRole("hr"), updateDepartment);
+router.delete("/departments/:id", requireRole("hr"), deleteDepartment);
 router.post("/bulk-onboard", requireRole("hr"), bulkOnboardStaff);
 router.get("/", listStaff);
 router.post("/", requireRole("hr"), createStaff);

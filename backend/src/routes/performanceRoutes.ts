@@ -23,7 +23,7 @@ router.get("/:userId", getPerformance);
 router.post("/manager-score", requireRole("manager", "hr"), managerScore);
 router.post("/self-appraisal", requireRole("employee", "manager", "hr"), selfAppraisal);
 router.post("/final-score", requireRole("manager", "hr"), finalScore);
-router.post("/director-review", requireRole("hr"), directorReview);
+router.post("/director-review", requireRole("manager"), directorReview);
 router.post("/unlock-evaluation", requireRole("hr"), unlockEvaluation);
 router.post("/signoff", requireRole("employee", "manager", "hr"), signOff);
 

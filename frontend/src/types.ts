@@ -82,8 +82,10 @@ export type NotificationItem = {
   entity_type: string;
   entity_id: number | null;
   created_at: string;
-  name: string;
-  email: string;
+  name: string | null;
+  email: string | null;
+  title?: string;
+  message?: string;
 };
 
 export type TimelineItem = {

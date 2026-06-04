@@ -327,8 +327,15 @@ export const finalScore = asyncHandler(async (req: AuthedRequest, res: Response)
 });
 
 export const directorReview = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  if (req.user?.role !== "manager") {
+    throw new ApiError(403, "Director review can only be completed by a director account.");
+  }
+
   const data = directorReviewSchema.parse(req.body);
   const appraisal = await requireAppraisalReadyForDirector(data.appraisalId);
+  if (req.user.id === appraisal.user_id) {
+    throw new ApiError(403, "Directors cannot review their own appraisal record.");
+  }
 
   const result = await query(
     `
@@ -347,6 +354,25 @@ export const directorReview = asyncHandler(async (req: AuthedRequest, res: Respo
       data.trainingRecommendations?.trim() ?? null
     ]
   );
+
+  const employee = await query<{ name: string; email: string; period: string }>(
+    "SELECT u.name, u.email, a.period FROM appraisals a JOIN users u ON u.id = a.user_id WHERE a.id = $1",
+    [appraisal.id]
+  );
+  const recipient = employee.rows[0];
+  if (recipient) {
+    await sendEmail({
+      to: recipient.email,
+      subject: "Director review completed",
+      html: `
+        <p>Hello ${recipient.name},</p>
+        <p>Your director review for <strong>${recipient.period}</strong> is complete.</p>
+        <p>Please sign in to view the remarks.</p>
+      `
+    }).catch((error) => {
+      console.error("Director review notification failed", error);
+    });
+  }
 
   await logAudit({
     actorUserId: req.user?.id ?? null,

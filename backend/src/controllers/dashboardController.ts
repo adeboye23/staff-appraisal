@@ -3,7 +3,6 @@ import { query } from "../db.js";
 import { AuthedRequest } from "../types.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
-import { hasHrAccess } from "../utils/roles.js";
 
 export const getDashboardSummary = asyncHandler(async (req: AuthedRequest, res: Response) => {
   if (!req.user) {
@@ -150,26 +149,99 @@ export const getNotifications = asyncHandler(async (req: AuthedRequest, res: Res
     throw new ApiError(401, "Authentication required");
   }
 
-  if (!hasHrAccess(req.user.role)) {
-    return res.json({ data: [] });
-  }
-
-  const result = await query(
+  const result = await query<{
+    id: number;
+    action: string;
+    entity_type: string;
+    entity_id: number | null;
+    created_at: string;
+    name: string | null;
+    email: string | null;
+    title: string;
+    message: string;
+  }>(
     `
-      SELECT
-        a.id,
-        a.action,
-        a.entity_type,
-        a.entity_id,
-        a.created_at,
-        u.name,
-        u.email
-      FROM audit_logs a
-      JOIN users u ON u.id = a.actor_user_id
-      WHERE u.role = 'employee'
-      ORDER BY a.created_at DESC
-      LIMIT 12
-    `
+      WITH relevant AS (
+        SELECT
+          a.id,
+          a.action,
+          a.entity_type,
+          a.entity_id,
+          a.created_at,
+          actor.name,
+          actor.email,
+          CASE
+            WHEN a.action = 'auth.login' THEN 'Last login'
+            WHEN a.action = 'kpi.approval' AND a.metadata->>'status' = 'rejected' THEN 'KPI needs adjustment'
+            WHEN a.action = 'kpi.approval' AND a.metadata->>'status' = 'approved' THEN 'KPI approved'
+            WHEN a.action = 'kpi.create' THEN 'KPI sent'
+            WHEN a.action = 'kpi.update' THEN 'KPI updated'
+            WHEN a.action = 'performance.self_appraisal' THEN 'Employee review sent'
+            WHEN a.action = 'performance.manager_score' THEN 'Manager score saved'
+            WHEN a.action = 'performance.final_score' THEN 'Final score saved'
+            WHEN a.action = 'appraisal.director_review' THEN 'Director review complete'
+            WHEN a.action LIKE 'department.%' THEN 'Department updated'
+            WHEN a.action LIKE 'user.%' THEN 'User maintenance'
+            ELSE 'Activity update'
+          END AS title,
+          CASE
+            WHEN a.action = 'auth.login' THEN 'Signed in successfully.'
+            WHEN a.action = 'kpi.approval' AND a.metadata->>'status' = 'rejected' THEN 'A manager returned a KPI for adjustment.'
+            WHEN a.action = 'kpi.approval' AND a.metadata->>'status' = 'approved' THEN 'A manager approved a KPI.'
+            WHEN a.action = 'kpi.create' THEN 'An employee submitted a KPI.'
+            WHEN a.action = 'kpi.update' THEN 'A KPI was updated.'
+            WHEN a.action = 'performance.self_appraisal' THEN 'An employee sent review details.'
+            WHEN a.action = 'performance.manager_score' THEN 'A manager saved a locked score.'
+            WHEN a.action = 'performance.final_score' THEN 'A final agreed score was saved.'
+            WHEN a.action = 'appraisal.director_review' THEN 'Director remarks are ready.'
+            WHEN a.action LIKE 'department.%' THEN 'Department settings changed.'
+            WHEN a.action LIKE 'user.%' THEN 'A staff account was updated.'
+            ELSE 'New activity was recorded.'
+          END AS message
+        FROM audit_logs a
+        LEFT JOIN users actor ON actor.id = a.actor_user_id
+        WHERE
+          a.action = 'auth.login' AND a.entity_id = $1
+          OR (
+            $2 = 'employee'
+            AND (
+              (a.entity_type = 'kpi' AND a.entity_id IN (SELECT id FROM kpis WHERE user_id = $1))
+              OR (a.entity_type = 'performance' AND a.entity_id IN (
+                SELECT p.id FROM performance p JOIN kpis k ON k.id = p.kpi_id WHERE k.user_id = $1
+              ))
+              OR (a.entity_type = 'appraisal' AND a.entity_id IN (SELECT id FROM appraisals WHERE user_id = $1))
+            )
+          )
+          OR (
+            $2 = 'manager'
+            AND (
+              (a.entity_type = 'kpi' AND a.entity_id IN (SELECT id FROM kpis WHERE user_id IN (SELECT id FROM users WHERE manager_id = $1)))
+              OR (a.entity_type = 'performance' AND a.entity_id IN (
+                SELECT p.id
+                FROM performance p
+                JOIN kpis k ON k.id = p.kpi_id
+                WHERE k.user_id IN (SELECT id FROM users WHERE manager_id = $1)
+              ))
+              OR (a.entity_type = 'appraisal' AND a.entity_id IN (
+                SELECT id FROM appraisals WHERE user_id IN (SELECT id FROM users WHERE manager_id = $1)
+              ))
+            )
+          )
+          OR (
+            $2 IN ('hr', 'super_admin')
+            AND (
+              a.action LIKE 'department.%'
+              OR a.action LIKE 'user.%'
+              OR a.action IN ('kpi.create', 'kpi.update', 'kpi.approval', 'performance.self_appraisal', 'performance.manager_score', 'performance.final_score', 'appraisal.director_review')
+            )
+          )
+      )
+      SELECT *
+      FROM relevant
+      ORDER BY created_at DESC
+      LIMIT 20
+    `,
+    [req.user.id, req.user.role]
   );
 
   res.json({ data: result.rows });

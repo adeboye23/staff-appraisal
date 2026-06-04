@@ -13,6 +13,8 @@ import {
   LogOut,
   Mail,
   Menu,
+  MoreVertical,
+  Pencil,
   Search,
   Settings,
   ShieldCheck,
@@ -23,6 +25,7 @@ import {
   Users,
   Workflow,
   Wrench,
+  Trash2,
   X
 } from "lucide-react";
 import {
@@ -50,6 +53,7 @@ import {
   createReviewPeriod as createReviewPeriodRequest,
   createStaff,
   createKpi as createKpiRequest,
+  deleteDepartment as deleteDepartmentRequest,
   deleteKpiById,
   deleteStaff,
   getDepartmentReport,
@@ -71,6 +75,7 @@ import {
   submitFinalScore,
   submitManagerScore,
   submitSelfAppraisal,
+  updateDepartment as updateDepartmentRequest,
   updateKpi as updateKpiRequest,
   updateStaff
 } from "./api";
@@ -241,6 +246,18 @@ function getAggregateFinalScore(kpis: Kpi[]) {
   const weightedTotal = kpis.reduce((total, item) => total + (item.finalScore ?? 0) * Math.max(item.weight, 1), 0);
   const totalWeight = kpis.reduce((total, item) => total + Math.max(item.weight, 1), 0);
   return Number((weightedTotal / Math.max(totalWeight, 1)).toFixed(2));
+}
+
+function getObjectiveList(description?: string) {
+  const cleaned = description?.trim();
+  if (!cleaned) return ["No objective note recorded for this KPI."];
+
+  const lines = cleaned
+    .split(/\r?\n|;+/)
+    .map((item) => item.replace(/^[-*\d.)\s]+/, "").trim())
+    .filter(Boolean);
+
+  return lines.length > 1 ? lines : [cleaned];
 }
 
 function isReviewDateOpen(reviewDate?: string | null) {
@@ -1466,7 +1483,7 @@ function Topbar({
 }) {
   const displayName = getDisplayName(user);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const notificationCount = notifications.length;
+  const notificationCount = notifications.length + 1;
   const notificationRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1541,6 +1558,10 @@ function Topbar({
               <div className="absolute right-0 top-[calc(100%+10px)] z-40 w-[340px] rounded-2xl border border-neutral-200 bg-white p-3 shadow-xl">
                 <div className="mb-2 px-2 text-sm font-semibold text-slate-900">Notifications</div>
                 <div className="max-h-[320px] space-y-2 overflow-y-auto">
+                  <div className="rounded-xl bg-slate-900 px-3 py-3 text-left text-white">
+                    <p className="text-sm font-semibold">Welcome back.</p>
+                    <p className="mt-1 text-xs text-slate-300">Your workspace is ready.</p>
+                  </div>
                   {notifications.length ? (
                     notifications.map((item) => (
                       <button
@@ -1549,9 +1570,8 @@ function Topbar({
                         onClick={() => setNotificationsOpen(false)}
                         className="block w-full rounded-xl bg-slate-50 px-3 py-3 text-left transition hover:bg-slate-100"
                       >
-                        <p className="text-sm font-medium text-slate-900">
-                          {nameOverrides[item.email] || item.name} {item.action.replace(/_/g, " ")}
-                        </p>
+                        <p className="text-sm font-medium text-slate-900">{item.title ?? "Activity update"}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{item.message ?? `${item.action.replace(/[._]/g, " ")} recorded.`}</p>
                         <p className="mt-1 text-xs text-slate-500">
                           {new Date(item.created_at).toLocaleString()}
                         </p>
@@ -2585,8 +2605,9 @@ function AppraisalFlow({
                       { label: "Manager locked", done: item.managerScoreLocked },
                       { label: "Final agreed", done: item.finalScore !== undefined }
                     ];
+                    const canUseDirectorReview = user.role === "manager" && !isOwnProfile;
                     const canDirectorReview =
-                      hasAdminAccess(user.role) &&
+                      canUseDirectorReview &&
                       !isOwnProfile &&
                       Boolean(item.appraisalId) &&
                       item.appraisalDirectorOverallRemark === null &&
@@ -2600,6 +2621,7 @@ function AppraisalFlow({
                     const directorOverallInput = item.appraisalId ? directorOverallInputs[item.appraisalId] ?? "" : "";
                     const directorImprovementInput = item.appraisalId ? directorImprovementInputs[item.appraisalId] ?? "" : "";
                     const directorTrainingInput = item.appraisalId ? directorTrainingInputs[item.appraisalId] ?? "" : "";
+                    const objectives = getObjectiveList(item.description);
 
                     return (
                       <Fragment key={item.id}>
@@ -2646,7 +2668,14 @@ function AppraisalFlow({
                                   <div>
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Selected appraisal</p>
                                     <h4 className="mt-2 text-xl font-semibold text-slate-900">{item.title}</h4>
-                                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{item.description || "No objective note recorded for this KPI."}</p>
+                                    <ul className="mt-3 max-w-3xl space-y-2 text-sm leading-6 text-slate-600">
+                                      {objectives.map((objective, index) => (
+                                        <li key={`${item.id}-objective-${index}`} className="flex gap-2">
+                                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                                          <span>{objective}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
                                     <div className="mt-4 flex flex-wrap gap-2">
                                       {stageSteps.map((step) => (
                                         <span
@@ -2817,10 +2846,16 @@ function AppraisalFlow({
                                           <div className="flex items-end">
                                             <button
                                               disabled={!canManagerScore || actionState.kind !== null || managerScoreInput === ""}
-                                              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                                              className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-70 ${
+                                                item.managerScore !== undefined ? "bg-emerald-600" : "bg-slate-900"
+                                              }`}
                                               onClick={() => void onSubmitManagerScore(item.id, Number(managerScoreInput))}
                                             >
-                                              {actionState.kind === "managerScore" && actionState.kpiId === item.id ? "Saving..." : "Save manager score"}
+                                              {item.managerScore !== undefined
+                                                ? "Saved"
+                                                : actionState.kind === "managerScore" && actionState.kpiId === item.id
+                                                  ? "Saving..."
+                                                  : "Save manager score"}
                                             </button>
                                           </div>
 
@@ -2852,7 +2887,11 @@ function AppraisalFlow({
                                               className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
                                               onClick={() => void onSubmitFinalScore(item.id, Number(finalScoreInput))}
                                             >
-                                              {actionState.kind === "finalScore" && actionState.kpiId === item.id ? "Saving..." : "Save final score"}
+                                              {item.finalScore !== undefined
+                                                ? "Saved"
+                                                : actionState.kind === "finalScore" && actionState.kpiId === item.id
+                                                  ? "Saving..."
+                                                  : "Save final score"}
                                             </button>
                                           </div>
                                           <label className="flex items-start gap-3 rounded-2xl border border-neutral-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 md:col-span-2">
@@ -2886,8 +2925,11 @@ function AppraisalFlow({
                                       )}
                                     </div>
 
+                                    {(canUseDirectorReview || item.appraisalDirectorOverallRemark) && (
                                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                                      <p className="text-base font-semibold text-slate-900">Director review</p>
+                                      <p className="text-base font-semibold text-slate-900">
+                                        {canUseDirectorReview ? "Director review" : "Director remarks"}
+                                      </p>
                                       {canDirectorReview ? (
                                         <div className="mt-4 space-y-3">
                                           <label className="block text-sm">
@@ -2914,15 +2956,14 @@ function AppraisalFlow({
                                         <div className="mt-4 space-y-3 text-sm text-slate-600">
                                           <p>
                                             {item.appraisalDirectorOverallRemark ||
-                                              (hasAdminAccess(user.role)
-                                                ? "Director review opens here after every approved KPI in this appraisal has a locked final score."
-                                                : "Director final comments will appear here after HR or the super admin records them.")}
+                                              "Director review opens here after every approved KPI in this appraisal has a locked final score."}
                                           </p>
                                           {item.appraisalDirectorImprovementSuggestions ? <p>Improvement: {item.appraisalDirectorImprovementSuggestions}</p> : null}
                                           {item.appraisalDirectorTrainingRecommendations ? <p>Training: {item.appraisalDirectorTrainingRecommendations}</p> : null}
                                         </div>
                                       )}
                                     </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -3819,6 +3860,7 @@ function SettingsPanel({
   const [periodError, setPeriodError] = useState("");
   const [departmentStatus, setDepartmentStatus] = useState("");
   const [departmentError, setDepartmentError] = useState("");
+  const [openDepartmentMenuId, setOpenDepartmentMenuId] = useState<number | null>(null);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkError, setBulkError] = useState("");
   const [passwordForm, setPasswordForm] = useState({
@@ -4021,6 +4063,52 @@ function SettingsPanel({
     }
   };
 
+  const handleRenameDepartment = async (department: Department) => {
+    const nextName = window.prompt("Rename department", department.name);
+    if (!nextName?.trim() || nextName.trim() === department.name) {
+      setOpenDepartmentMenuId(null);
+      return;
+    }
+
+    setDepartmentSubmitting(true);
+    setDepartmentStatus("");
+    setDepartmentError("");
+
+    try {
+      await updateDepartmentRequest(token, department.id, nextName.trim());
+      await onDirectoryRefresh();
+      setDepartmentStatus("Department renamed.");
+    } catch (renameError) {
+      setDepartmentError(renameError instanceof Error ? renameError.message : "Unable to rename department");
+    } finally {
+      setDepartmentSubmitting(false);
+      setOpenDepartmentMenuId(null);
+    }
+  };
+
+  const handleDeleteDepartment = async (department: Department) => {
+    const confirmed = window.confirm(`Delete ${department.name}? Reassign staff first if this department is in use.`);
+    if (!confirmed) {
+      setOpenDepartmentMenuId(null);
+      return;
+    }
+
+    setDepartmentSubmitting(true);
+    setDepartmentStatus("");
+    setDepartmentError("");
+
+    try {
+      await deleteDepartmentRequest(token, department.id);
+      await onDirectoryRefresh();
+      setDepartmentStatus("Department deleted.");
+    } catch (deleteError) {
+      setDepartmentError(deleteError instanceof Error ? deleteError.message : "Unable to delete department");
+    } finally {
+      setDepartmentSubmitting(false);
+      setOpenDepartmentMenuId(null);
+    }
+  };
+
   const handleBulkOnboard = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBulkSubmitting(true);
@@ -4050,8 +4138,11 @@ function SettingsPanel({
 
       await onDirectoryRefresh();
       setBulkForm((current) => ({ ...current, emails: "" }));
+      const deliveryText = result.emailDeliveryConfigured
+        ? "emailed"
+        : "created. Email delivery is not configured, so credentials were logged by the server";
       setBulkStatus(
-        `${result.created.length} account${result.created.length === 1 ? "" : "s"} created and emailed.${
+        `${result.created.length} account${result.created.length === 1 ? "" : "s"} ${deliveryText}.${
           result.skipped.length ? ` ${result.skipped.length} skipped because they already exist or could not be sent.` : ""
         }`
       );
@@ -4256,9 +4347,34 @@ function SettingsPanel({
               </form>
               <div className="mt-6 grid grid-cols-1 gap-2">
                 {departments.map((department) => (
-                  <div key={department.id} className="flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3">
+                  <div key={department.id} className="relative flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3">
                     <span className="font-semibold text-slate-900">{department.name}</span>
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Active</span>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-neutral-200 bg-white p-2 text-slate-500 hover:text-slate-900"
+                      onClick={() => setOpenDepartmentMenuId((current) => (current === department.id ? null : department.id))}
+                      aria-label={`Open menu for ${department.name}`}
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                    {openDepartmentMenuId === department.id && (
+                      <div className="absolute right-3 top-12 z-20 w-40 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          onClick={() => void handleRenameDepartment(department)}
+                        >
+                          <Pencil size={14} /> Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                          onClick={() => void handleDeleteDepartment(department)}
+                        >
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

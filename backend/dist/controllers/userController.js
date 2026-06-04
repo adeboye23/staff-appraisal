@@ -1,10 +1,11 @@
 import crypto from "node:crypto";
+import { config } from "../config.js";
 import { query } from "../db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logAudit } from "../utils/audit.js";
 import { hasHrAccess } from "../utils/roles.js";
-import { bulkOnboardSchema, createDepartmentSchema, createUserSchema, resetUserPasswordSchema, updateUserSchema } from "../validators/user.js";
+import { bulkOnboardSchema, createDepartmentSchema, createUserSchema, resetUserPasswordSchema, updateDepartmentSchema, updateUserSchema } from "../validators/user.js";
 import { createUserAccount, deleteUserAccount, resetPasswordByUserId, updateUserAccount } from "../services/authService.js";
 export const listStaff = asyncHandler(async (req, res) => {
     if (!req.user) {
@@ -75,6 +76,44 @@ export const createDepartment = asyncHandler(async (req, res) => {
         entityId: result.rows[0].id
     });
     res.status(201).json({ department: result.rows[0] });
+});
+export const updateDepartment = asyncHandler(async (req, res) => {
+    const departmentId = Number(req.params.id);
+    const data = updateDepartmentSchema.parse(req.body);
+    const result = await query(`
+      UPDATE departments
+      SET name = $1
+      WHERE id = $2
+      RETURNING id, name
+    `, [data.name.trim(), departmentId]);
+    if (!result.rowCount) {
+        throw new ApiError(404, "Department not found");
+    }
+    await logAudit({
+        actorUserId: req.user?.id ?? null,
+        action: "department.rename",
+        entityType: "department",
+        entityId: departmentId
+    });
+    res.json({ department: result.rows[0] });
+});
+export const deleteDepartment = asyncHandler(async (req, res) => {
+    const departmentId = Number(req.params.id);
+    const usage = await query("SELECT COUNT(*)::text AS users FROM users WHERE department_id = $1", [departmentId]);
+    if (Number(usage.rows[0]?.users ?? 0) > 0) {
+        throw new ApiError(409, "Move or reassign staff before deleting this department");
+    }
+    const result = await query("DELETE FROM departments WHERE id = $1 RETURNING id", [departmentId]);
+    if (!result.rowCount) {
+        throw new ApiError(404, "Department not found");
+    }
+    await logAudit({
+        actorUserId: req.user?.id ?? null,
+        action: "department.delete",
+        entityType: "department",
+        entityId: departmentId
+    });
+    res.status(204).send();
 });
 async function ensureCanManageTargetUser(actorRole, userId) {
     if (actorRole === "super_admin") {
@@ -148,7 +187,11 @@ export const bulkOnboardStaff = asyncHandler(async (req, res) => {
             });
         }
     }
-    res.status(201).json({ created, skipped });
+    res.status(201).json({
+        created,
+        skipped,
+        emailDeliveryConfigured: Boolean(config.resendApiKey)
+    });
 });
 export const updateStaff = asyncHandler(async (req, res) => {
     const userId = Number(req.params.id);
