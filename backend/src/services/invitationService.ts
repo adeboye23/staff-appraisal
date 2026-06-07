@@ -10,7 +10,7 @@ export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked" | 
 
 type InviteInput = {
   email: string;
-  role: "employee" | "manager";
+  role: Role;
   departmentId: number;
   managerId?: number | null;
   createdBy: number;

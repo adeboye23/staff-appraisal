@@ -128,6 +128,8 @@ const statusLabels: Record<Kpi["status"], string> = {
   Rejected: "Needs adjustment"
 };
 
+type BulkInviteRole = "employee" | "manager" | "hr";
+
 const sidebarSections = [
   { label: "Workspace", keys: ["dashboard"] },
   { label: "Performance", keys: ["appraisals", "kpis", "reviews", "reports"] },
@@ -307,8 +309,8 @@ function isReviewDateOpen(reviewDate?: string | null) {
 
 function getNavItemsForRole(role: Role) {
   const allowedByRole: Record<Role, string[]> = {
-    employee: ["dashboard", "kpis", "appraisals", "reports", "settings"],
-    manager: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"],
+    employee: ["dashboard", "kpis", "appraisals", "reports"],
+    manager: ["dashboard", "kpis", "appraisals", "reviews", "reports"],
     hr: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"],
     super_admin: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"]
   };
@@ -1105,10 +1107,8 @@ function App() {
           />
           <main className="flex-1 bg-[#f5f6f8] px-4 py-4 sm:px-6 lg:px-8">
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-              <RoleWorkspaceBanner
-                user={user}
+              <WorkspaceControls
                 activeView={activeView}
-                profileName={profile?.name ?? getDisplayName(user)}
                 showProfileFocus={showProfileFocus}
                 staff={staff}
                 selectedProfileId={selectedProfileId}
@@ -1520,13 +1520,13 @@ function Sidebar({
 }) {
   return (
     <>
-      <aside className="hidden w-[276px] flex-col justify-between border-r border-slate-800 bg-[#0f1225] md:flex">
+      <aside className="hidden w-[276px] flex-col justify-between border-r border-red-950/30 bg-[#7f111b] md:flex">
         <SidebarContent activeView={activeView} setActiveView={setActiveView} user={user} />
       </aside>
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
           <button className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} aria-label="Close menu" />
-          <aside className="relative z-10 flex w-[276px] flex-col justify-between bg-[#0f1225] shadow-2xl">
+          <aside className="relative z-10 flex w-[276px] flex-col justify-between bg-[#7f111b] shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-300">Appraisal</p>
@@ -1604,7 +1604,7 @@ function SidebarContent({
                         }`}
                       >
                         <Icon size={18} />
-                        <span>{item.label}</span>
+                        <span>{item.key === "settings" ? "HR & People" : item.label}</span>
                       </button>
                     );
                   })}
@@ -3318,10 +3318,8 @@ function ReviewsPanel({
   );
 }
 
-function RoleWorkspaceBanner({
-  user,
+function WorkspaceControls({
   activeView,
-  profileName,
   showProfileFocus,
   staff,
   selectedProfileId,
@@ -3330,9 +3328,7 @@ function RoleWorkspaceBanner({
   cycleFilter,
   setCycleFilter
 }: {
-  user: AuthUser;
   activeView: string;
-  profileName: string;
   showProfileFocus: boolean;
   staff: StaffMember[];
   selectedProfileId: number | null;
@@ -3353,51 +3349,15 @@ function RoleWorkspaceBanner({
       )
     );
   }, [staff, staffSearch]);
-  const content =
-    hasAdminAccess(user.role)
-      ? {
-          eyebrow: "HR workspace",
-          title: activeView === "settings" ? "Organization control room" : "HR control room",
-          body:
-            activeView === "appraisals"
-              ? `Track ${profileName}, review progress, and complete final decisions from one place.`
-              : activeView === "reviews"
-                ? "Review progress, approval queues, and organizational readiness from one place."
-                : "Manage the appraisal cycle, staff records, and reporting controls.",
-          tone: "border border-slate-200 bg-white"
-        }
-      : user.role === "manager"
-        ? {
-            eyebrow: "Manager workspace",
-            title: activeView === "reviews" ? "Team review desk" : "Manager operating desk",
-            body:
-              activeView === "appraisals"
-                ? `Track scoring progress for ${profileName} and complete manager review before the appraisal review date closes.`
-                : activeView === "reviews"
-                  ? "Focus on submitted KPIs, approvals, and review readiness across your team."
-                  : "Work through team performance, approvals, and reporting with a manager-first view.",
-            tone: "border border-slate-200 bg-white"
-          }
-        : {
-            eyebrow: "Employee workspace",
-            title: "Personal appraisal workspace",
-            body:
-              activeView === "appraisals"
-                ? "Track your target score, complete each appraisal stage before the review date, and follow final feedback clearly."
-                : "Manage your KPIs, performance records, and reports from your personal workspace.",
-            tone: "border border-slate-200 bg-white"
-          };
+
+  if (!showToolbar) {
+    return null;
+  }
 
   return (
-    <section className={`rounded-3xl p-6 shadow-sm ring-1 ring-black/5 ${content.tone}`}>
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">{content.eyebrow}</p>
-          <h3 className="mt-2 text-2xl font-bold text-slate-900">{content.title}</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{content.body}</p>
-        </div>
-        {showToolbar && (
-          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[460px]">
+    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:max-w-[620px]">
             {showProfileFocus && (
               <label className="block text-sm">
                 <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Staff</span>
@@ -3447,7 +3407,6 @@ function RoleWorkspaceBanner({
               </div>
             )}
           </div>
-        )}
       </div>
     </section>
   );
@@ -4024,7 +3983,7 @@ function SettingsPanel({
   const [departmentForm, setDepartmentForm] = useState({ name: "" });
   const [bulkForm, setBulkForm] = useState({
     departmentId: "",
-    role: "employee" as "employee" | "manager",
+    role: "employee" as BulkInviteRole,
     managerId: "",
     emails: ""
   });
@@ -4685,11 +4644,18 @@ function SettingsPanel({
                   <span className="mb-2 block font-medium text-slate-700">Role</span>
                   <select
                     value={bulkForm.role}
-                    onChange={(event) => setBulkForm((current) => ({ ...current, role: event.target.value as "employee" | "manager" }))}
+                    onChange={(event) =>
+                      setBulkForm((current) => ({
+                        ...current,
+                        role: event.target.value as BulkInviteRole,
+                        managerId: event.target.value === "hr" ? "" : current.managerId
+                      }))
+                    }
                     className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                   >
                     <option value="employee">Employee</option>
                     <option value="manager">Manager</option>
+                    {user.role === "super_admin" && <option value="hr">HR</option>}
                   </select>
                 </label>
                 {(bulkForm.role === "employee" || bulkForm.role === "manager") && (

@@ -32,7 +32,7 @@ export const updateDepartmentSchema = z.object({
 export const bulkOnboardSchema = z.object({
   departmentId: z.number().int().positive(),
   emails: z.array(z.string().email()).min(1).max(200),
-  role: z.enum(["employee", "manager"]).default("employee"),
+  role: z.enum(["employee", "manager", "hr"]).default("employee"),
   managerId: z.number().int().positive().nullable().optional()
 });
 

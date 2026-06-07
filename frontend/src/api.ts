@@ -294,7 +294,7 @@ export function bulkOnboardStaff(
   payload: {
     departmentId: number;
     emails: string[];
-    role?: "employee" | "manager";
+    role?: "employee" | "manager" | "hr";
     managerId?: number | null;
   }
 ) {

@@ -210,6 +210,10 @@ export const createStaff = asyncHandler(async (req: AuthedRequest, res: Response
 
 export const bulkOnboardStaff = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const data = bulkOnboardSchema.parse(req.body);
+  if (data.role === "hr" && req.user?.role !== "super_admin") {
+    throw new ApiError(403, "Only the developer super admin can invite HR accounts");
+  }
+
   const uniqueEmails = Array.from(new Set(data.emails.map((email) => email.toLowerCase().trim())));
   const invited: Array<{ email: string; invitationId: number; status: string }> = [];
   const skipped: Array<{ email: string; reason: string }> = [];

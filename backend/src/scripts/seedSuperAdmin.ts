@@ -1,14 +1,17 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { pool, query } from "../db.js";
 import "../config.js";
 
-const email = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
-const password = process.env.SUPER_ADMIN_PASSWORD;
-const name = process.env.SUPER_ADMIN_NAME?.trim() || "Developer Super Admin";
+const defaultEmail = "prosperadeboye@gmail.com";
+const email = (process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() || defaultEmail);
+const generatedPassword = crypto.randomBytes(18).toString("base64url");
+const password = process.env.SUPER_ADMIN_PASSWORD || generatedPassword;
+const name = process.env.SUPER_ADMIN_NAME?.trim() || "Prosper Adeboye";
 
 async function main() {
-  if (!email || !password) {
-    throw new Error("SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD are required.");
+  if (!email) {
+    throw new Error("SUPER_ADMIN_EMAIL is required.");
   }
 
   if (password.length < 12) {
@@ -38,6 +41,9 @@ async function main() {
     );
 
     console.log(`Super admin account ready: ${email}`);
+    if (!process.env.SUPER_ADMIN_PASSWORD) {
+      console.log(`Generated temporary password: ${generatedPassword}`);
+    }
   } finally {
     await pool.end();
   }

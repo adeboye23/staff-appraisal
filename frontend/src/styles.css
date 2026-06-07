@@ -41,8 +41,8 @@
   --nc-info: #1d4ed8;
   --nc-info-soft: #e8eefc;
 
-  --nc-side: #0f1225;
-  --nc-side-2: #141832;
+  --nc-side: #7f111b;
+  --nc-side-2: #3f0b10;
   --nc-side-line: rgba(255, 255, 255, 0.06);
   --nc-side-text: #c9cee0;
   --nc-side-faint: #7a849a;
@@ -215,6 +215,7 @@ body::before {
 
 aside.bg-\[\#0f172a\],
 aside.bg-\[\#0f1225\],
+aside.bg-\[\#7f111b\],
 .bg-slate-900,
 .bg-slate-950\/70,
 .bg-\[\#0f172a\] {
@@ -223,7 +224,8 @@ aside.bg-\[\#0f1225\],
 }
 
 aside.bg-\[\#0f172a\],
-aside.bg-\[\#0f1225\] {
+aside.bg-\[\#0f1225\],
+aside.bg-\[\#7f111b\] {
   border-right: 1px solid var(--nc-side-line) !important;
 }
 
