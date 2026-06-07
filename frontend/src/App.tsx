@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Download,
+  Eye,
   FileBarChart2,
   LayoutDashboard,
   Lock,
@@ -126,6 +127,35 @@ const statusLabels: Record<Kpi["status"], string> = {
   Approved: "Approved",
   Rejected: "Needs adjustment"
 };
+
+const sidebarSections = [
+  { label: "Workspace", keys: ["dashboard"] },
+  { label: "Performance", keys: ["appraisals", "kpis", "reviews", "reports"] },
+  { label: "HR & People", keys: ["settings"] }
+];
+
+function getRoleBadgeClass(role: Role) {
+  if (role === "hr" || role === "super_admin") {
+    return "bg-brand-50 text-brand ring-1 ring-brand/15";
+  }
+  if (role === "manager") {
+    return "bg-slate-900/5 text-slate-800 ring-1 ring-slate-900/10";
+  }
+  return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
+}
+
+function getAccountStatusBadgeClass(status?: string | null) {
+  if (status === "deactivated" || status === "revoked") {
+    return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
+  }
+  if (status === "pending") {
+    return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+  }
+  if (status === "accepted" || status === "active") {
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
+  }
+  return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+}
 
 const storageKey = "news-central-auth";
 
@@ -1490,13 +1520,13 @@ function Sidebar({
 }) {
   return (
     <>
-      <aside className="hidden w-[276px] flex-col justify-between border-r border-slate-800 bg-[#0f172a] md:flex">
+      <aside className="hidden w-[276px] flex-col justify-between border-r border-slate-800 bg-[#0f1225] md:flex">
         <SidebarContent activeView={activeView} setActiveView={setActiveView} user={user} />
       </aside>
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
           <button className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} aria-label="Close menu" />
-          <aside className="relative z-10 flex w-[276px] flex-col justify-between bg-[#0f172a] shadow-2xl">
+          <aside className="relative z-10 flex w-[276px] flex-col justify-between bg-[#0f1225] shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-300">Appraisal</p>
@@ -1543,28 +1573,43 @@ function SidebarContent({
     <>
       <div className="p-5">
         <div className="mb-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-300">Performance</p>
-          <div className="mt-3">
-            <img src={companyLogo} alt="News Central" className="h-12 w-12 rounded-lg object-cover" />
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-200">Staff Appraisal</p>
+          <div className="mt-3 flex items-center gap-3">
+            <img src={companyLogo} alt="News Central" className="h-12 w-12 rounded-xl object-cover ring-1 ring-white/10" />
+            <div>
+              <p className="text-sm font-semibold text-white">News Central</p>
+              <p className="text-xs text-slate-400">Performance suite</p>
+            </div>
           </div>
         </div>
-        <nav className="space-y-1">
-          {roleNavItems.map((item) => {
-            const Icon = navIcons[item.key as keyof typeof navIcons];
-            const active = activeView === item.key;
+        <nav className="space-y-6">
+          {sidebarSections.map((section) => {
+            const sectionItems = roleNavItems.filter((item) => section.keys.includes(item.key));
+            if (!sectionItems.length) return null;
             return (
-              <button
-                key={item.key}
-                onClick={() => setActiveView(item.key)}
-                className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
-                  active
-                    ? "bg-indigo-500/15 text-indigo-200 ring-1 ring-inset ring-indigo-500/30"
-                    : "text-slate-300 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
+              <div key={section.label}>
+                <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{section.label}</p>
+                <div className="space-y-1">
+                  {sectionItems.map((item) => {
+                    const Icon = navIcons[item.key as keyof typeof navIcons];
+                    const active = activeView === item.key;
+                    return (
+                      <button
+                        key={item.key}
+                        onClick={() => setActiveView(item.key)}
+                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
+                          active
+                            ? "bg-white/10 text-white ring-1 ring-inset ring-white/10"
+                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                        }`}
+                      >
+                        <Icon size={18} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>
@@ -1578,12 +1623,13 @@ function SidebarContent({
               .join("")
               .slice(0, 2)}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">{displayName}</p>
             <div className="mt-1 inline-flex rounded-full bg-indigo-500/15 px-2 py-1 text-xs font-medium capitalize text-indigo-200">
               {user.role}
             </div>
           </div>
+          <LogOut size={17} className="shrink-0 text-slate-500" aria-hidden="true" />
         </div>
       </div>
     </>
@@ -4375,10 +4421,39 @@ function SettingsPanel({
     }
   };
 
+  const pendingInvitationCount = invitations.filter((item) => item.status === "pending").length;
+
   return (
     <section className="space-y-6">
       {hasAdminAccess(user.role) ? (
         <div className="space-y-6">
+          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">HR & People</p>
+                <h1 className="mt-2 text-3xl font-bold text-slate-950">People & teams</h1>
+                <p className="mt-2 text-sm text-slate-500">
+                  {staff.length} active directory record{staff.length === 1 ? "" : "s"} · {pendingInvitationCount} pending invite{pendingInvitationCount === 1 ? "" : "s"} · {departments.length} department{departments.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-3">
+                <a href="#staff-directory" className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                  Import CSV
+                </a>
+                <a href="#bulk-invite" className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                  Bulk Invite
+                </a>
+                <a href="#user-management" className="rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700">
+                  Invite by Email
+                </a>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-6 border-b border-slate-200 text-sm font-semibold text-slate-500">
+              <a href="#staff-directory" className="border-b-2 border-brand px-1 pb-3 text-brand">Directory</a>
+              <a href="#pending-invites" className="px-1 pb-3 transition hover:text-slate-900">Pending Invites</a>
+              <a href="#departments" className="px-1 pb-3 transition hover:text-slate-900">Departments</a>
+            </div>
+          </div>
           {user.role === "super_admin" && (
             <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -4505,7 +4580,7 @@ function SettingsPanel({
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div id="departments" className="min-w-0 scroll-mt-24 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-brand ring-1 ring-slate-200">
                   <Building2 size={20} />
@@ -4577,7 +4652,7 @@ function SettingsPanel({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div id="bulk-invite" className="min-w-0 scroll-mt-24 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex items-start gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-brand ring-1 ring-slate-200">
@@ -4667,7 +4742,7 @@ function SettingsPanel({
               </form>
             </div>
 
-            <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div id="pending-invites" className="min-w-0 scroll-mt-24 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">Invitation tracking</h3>
@@ -4713,7 +4788,7 @@ function SettingsPanel({
                           <td className="px-4 py-4 text-slate-600 capitalize">{invitation.role}</td>
                           <td className="px-4 py-4 text-slate-600">{invitation.department ?? "Unassigned"}</td>
                           <td className="px-4 py-4">
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-700">
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${getAccountStatusBadgeClass(invitation.status)}`}>
                               {invitation.status}
                             </span>
                           </td>
@@ -4754,7 +4829,7 @@ function SettingsPanel({
             </div>
           </div>
 
-          <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div id="user-management" className="min-w-0 scroll-mt-24 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-slate-900">User management</h3>
@@ -4927,13 +5002,13 @@ function SettingsPanel({
             </form>
           </div>
 
-          <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div id="staff-directory" className="min-w-0 scroll-mt-24 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <h3 className="text-lg font-semibold text-slate-900">Staff directory</h3>
             <div className="mt-5 overflow-x-auto">
               <table className="min-w-full text-left">
                 <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
                   <tr>
-                    {["Name", "Email", "Role", "Department", "Status", "Actions"].map((col) => (
+                    {["Name", "Role", "Department", "Status", "Actions"].map((col) => (
                       <th key={col} className="px-4 py-3 font-semibold">
                         {col}
                       </th>
@@ -4941,48 +5016,94 @@ function SettingsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {staff.map((member) => (
-                    <tr key={member.id} className="border-t border-neutral-100">
-                      <td className="px-4 py-4 font-medium text-slate-900">{getDisplayNameFromStaff(member)}</td>
-                      <td className="px-4 py-4 text-slate-600">{member.email}</td>
-                      <td className="px-4 py-4 text-slate-600 capitalize">{member.role}</td>
+                  {staff.length ? (
+                    staff.map((member) => (
+                      <tr key={member.id} className="border-t border-neutral-100">
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
+                            {getDisplayNameFromStaff(member)
+                              .split(" ")
+                              .map((part) => part[0])
+                              .join("")
+                              .slice(0, 2)}
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-900">{getDisplayNameFromStaff(member)}</p>
+                            <p className="text-xs text-slate-500">{member.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${getRoleBadgeClass(member.role)}`}>
+                          {member.role}
+                        </span>
+                      </td>
                       <td className="px-4 py-4 text-slate-600">{member.department ?? "Unassigned"}</td>
                       <td className="px-4 py-4">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-700">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${getAccountStatusBadgeClass(member.account_status ?? "active")}`}>
                           {member.account_status ?? "active"}
                         </span>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
                           <button
-                            className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-slate-700"
+                            type="button"
+                            title="View profile"
+                            aria-label={`View ${getDisplayNameFromStaff(member)}`}
+                            className="rounded-xl border border-neutral-200 p-2 text-slate-600 hover:text-slate-900"
                             onClick={() => handleEdit(member)}
                           >
-                            Edit
-                          </button>
-                          <button
-                            className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-brand"
-                            onClick={() => handlePasswordReset(member)}
-                          >
-                            Reset password
+                            <Eye size={15} />
                           </button>
                           <button
                             type="button"
-                            className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-slate-700"
-                            onClick={() => void handleStaffStatusChange(member, member.account_status === "deactivated" ? "active" : "deactivated")}
+                            title="Edit staff"
+                            aria-label={`Edit ${getDisplayNameFromStaff(member)}`}
+                            className="rounded-xl border border-neutral-200 p-2 text-brand hover:text-brand-700"
+                            onClick={() => handleEdit(member)}
                           >
-                            {member.account_status === "deactivated" ? "Activate" : "Deactivate"}
+                            <Pencil size={15} />
                           </button>
                           <button
-                            className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-rose-600"
+                            type="button"
+                            title={member.account_status === "deactivated" ? "Activate staff" : "Lock staff"}
+                            aria-label={`${member.account_status === "deactivated" ? "Activate" : "Lock"} ${getDisplayNameFromStaff(member)}`}
+                            className="rounded-xl border border-neutral-200 p-2 text-slate-600 hover:text-slate-900"
+                            onClick={() => void handleStaffStatusChange(member, member.account_status === "deactivated" ? "active" : "deactivated")}
+                          >
+                            <Lock size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Reset password"
+                            aria-label={`Reset password for ${getDisplayNameFromStaff(member)}`}
+                            className="rounded-xl border border-neutral-200 p-2 text-slate-600 hover:text-slate-900"
+                            onClick={() => handlePasswordReset(member)}
+                          >
+                            <Wrench size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Delete staff"
+                            aria-label={`Delete ${getDisplayNameFromStaff(member)}`}
+                            className="rounded-xl border border-neutral-200 p-2 text-rose-600 hover:bg-rose-50"
                             onClick={() => handleDelete(member)}
                           >
-                            Delete
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={5}>
+                        <Users className="mx-auto mb-3 text-slate-300" size={28} />
+                        No staff records yet. Use Invite by Email or Bulk Invite to start building the directory.
+                      </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>

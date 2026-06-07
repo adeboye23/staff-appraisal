@@ -41,8 +41,8 @@
   --nc-info: #1d4ed8;
   --nc-info-soft: #e8eefc;
 
-  --nc-side: #0a0a0a;
-  --nc-side-2: #171717;
+  --nc-side: #0f1225;
+  --nc-side-2: #141832;
   --nc-side-line: rgba(255, 255, 255, 0.06);
   --nc-side-text: #c9cee0;
   --nc-side-faint: #7a849a;
@@ -214,6 +214,7 @@ body::before {
 }
 
 aside.bg-\[\#0f172a\],
+aside.bg-\[\#0f1225\],
 .bg-slate-900,
 .bg-slate-950\/70,
 .bg-\[\#0f172a\] {
@@ -221,7 +222,8 @@ aside.bg-\[\#0f172a\],
   color: var(--nc-side-text) !important;
 }
 
-aside.bg-\[\#0f172a\] {
+aside.bg-\[\#0f172a\],
+aside.bg-\[\#0f1225\] {
   border-right: 1px solid var(--nc-side-line) !important;
 }
 
@@ -242,6 +244,7 @@ aside nav button:hover {
 }
 
 aside nav button.bg-indigo-500\/15,
+aside nav button.bg-white\/10,
 aside nav button.text-indigo-200 {
   background: rgba(193, 18, 31, 0.16) !important;
   color: #fff !important;
@@ -492,7 +495,7 @@ table tbody tr:first-child {
 }
 
 table tbody tr:hover {
-  background: #fafbfd !important;
+  background: #fff7f8 !important;
 }
 
 table tbody td {
