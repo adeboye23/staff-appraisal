@@ -4410,23 +4410,23 @@ function SettingsPanel({
             </div>
           )}
 
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
+          <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-slate-900">Appraisal periods</h3>
                 <p className="text-sm text-slate-500">Set the active review cycle so KPI creation and reporting stay aligned.</p>
               </div>
-              <div className="rounded-2xl bg-brand/10 px-4 py-2 text-sm font-semibold text-brand">
+              <div className="break-words rounded-2xl bg-brand/10 px-4 py-2 text-sm font-semibold text-brand">
                 Active: {activeReviewPeriod?.name ?? "Not set"}
               </div>
             </div>
-            <form className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleCreatePeriod}>
+            <form className="mt-6 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleCreatePeriod}>
               <label className="text-sm">
                 <span className="mb-2 block font-medium text-slate-700">Period name</span>
                 <input
                   value={periodForm.name}
                   onChange={(event) => setPeriodForm((current) => ({ ...current, name: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                   placeholder="2027 Annual Review"
                 />
               </label>
@@ -4436,7 +4436,7 @@ function SettingsPanel({
                   type="date"
                   value={periodForm.startsOn}
                   onChange={(event) => setPeriodForm((current) => ({ ...current, startsOn: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               <label className="text-sm">
@@ -4445,7 +4445,7 @@ function SettingsPanel({
                   type="date"
                   value={periodForm.endsOn}
                   onChange={(event) => setPeriodForm((current) => ({ ...current, endsOn: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               <label className="flex items-center gap-3 rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-medium text-slate-700">
@@ -4460,7 +4460,7 @@ function SettingsPanel({
               <div className="md:col-span-2">
                 <button
                   disabled={periodSubmitting}
-                  className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                  className="w-full rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-70 sm:w-auto"
                 >
                   {periodSubmitting ? "Saving..." : "Create review period"}
                 </button>
@@ -4468,7 +4468,7 @@ function SettingsPanel({
             </form>
             {(periodStatus || periodError) && (
               <div
-                className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                className={`mt-4 min-w-0 break-words rounded-2xl px-4 py-3 text-sm ${
                   periodError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
                 }`}
               >
@@ -4477,14 +4477,14 @@ function SettingsPanel({
             )}
             <div className="mt-6 space-y-3">
               {reviewPeriods.map((period) => (
-                <div key={period.id} className="flex flex-col gap-3 rounded-2xl border border-neutral-200 p-4 md:flex-row md:items-center md:justify-between">
-                  <div>
+                <div key={period.id} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-neutral-200 p-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
                     <p className="font-semibold text-slate-900">{period.name}</p>
                     <p className="mt-1 text-sm text-slate-500">
                       {period.starts_on || "No start date"} to {period.ends_on || "No end date"}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex shrink-0 items-center gap-3">
                     {period.is_active ? (
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
                         Active
@@ -4504,8 +4504,8 @@ function SettingsPanel({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-brand ring-1 ring-slate-200">
                   <Building2 size={20} />
@@ -4577,7 +4577,7 @@ function SettingsPanel({
               </div>
             </div>
 
-            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex items-start gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-brand ring-1 ring-slate-200">
@@ -4590,13 +4590,13 @@ function SettingsPanel({
                 </div>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Invitation links enabled</span>
               </div>
-              <form className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleBulkOnboard}>
+              <form className="mt-5 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleBulkOnboard}>
                 <label className="text-sm">
                   <span className="mb-2 block font-medium text-slate-700">Department</span>
                   <select
                     value={bulkForm.departmentId}
                     onChange={(event) => setBulkForm((current) => ({ ...current, departmentId: event.target.value }))}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                   >
                     <option value="">Select department</option>
                     {departments.map((department) => (
@@ -4611,7 +4611,7 @@ function SettingsPanel({
                   <select
                     value={bulkForm.role}
                     onChange={(event) => setBulkForm((current) => ({ ...current, role: event.target.value as "employee" | "manager" }))}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                   >
                     <option value="employee">Employee</option>
                     <option value="manager">Manager</option>
@@ -4625,7 +4625,7 @@ function SettingsPanel({
                     <select
                       value={bulkForm.managerId}
                       onChange={(event) => setBulkForm((current) => ({ ...current, managerId: event.target.value }))}
-                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                      className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                     >
                       <option value="">{bulkForm.role === "manager" ? "Select director / supervisor" : "Select line manager"}</option>
                       {(bulkForm.role === "manager" ? staff.filter((member) => member.role !== "employee") : managers).map((manager) => (
@@ -4642,13 +4642,13 @@ function SettingsPanel({
                     rows={6}
                     value={bulkForm.emails}
                     onChange={(event) => setBulkForm((current) => ({ ...current, emails: event.target.value }))}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    className="min-h-40 w-full min-w-0 resize-y rounded-2xl border border-neutral-200 px-4 py-3"
                     placeholder="one@company.com, two@company.com&#10;three@company.com"
                   />
                 </label>
                 {(bulkStatus || bulkError) && (
                   <div
-                    className={`rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
+                    className={`min-w-0 break-words rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
                       bulkError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
                     }`}
                   >
@@ -4658,7 +4658,7 @@ function SettingsPanel({
                 <div className="md:col-span-2">
                   <button
                     disabled={bulkSubmitting}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-70 sm:w-auto"
                   >
                     <Mail size={16} />
                     {bulkSubmitting ? "Sending invitations..." : "Send setup invitations"}
@@ -4667,7 +4667,7 @@ function SettingsPanel({
               </form>
             </div>
 
-            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">Invitation tracking</h3>
@@ -4754,9 +4754,9 @@ function SettingsPanel({
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
+          <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-slate-900">User management</h3>
                 <p className="text-sm text-slate-500">Use this for corrections and individual account maintenance after batch onboarding.</p>
               </div>
@@ -4769,13 +4769,13 @@ function SettingsPanel({
                 </button>
               )}
             </div>
-            <form className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
+            <form className="mt-6 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
               <label className="text-sm">
                 <span className="mb-2 block font-medium text-slate-700">Full name</span>
                 <input
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               <label className="text-sm">
@@ -4783,7 +4783,7 @@ function SettingsPanel({
                 <input
                   value={form.email}
                   onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               <label className="text-sm">
@@ -4800,7 +4800,7 @@ function SettingsPanel({
                           : ""
                     }))
                   }
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 >
                   <option value="employee">Employee</option>
                   <option value="manager">Manager</option>
@@ -4812,7 +4812,7 @@ function SettingsPanel({
                 <select
                   value={form.departmentId}
                   onChange={(event) => setForm((current) => ({ ...current, departmentId: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 >
                   <option value="">Select department</option>
                   {departments.map((department) => (
@@ -4829,7 +4829,7 @@ function SettingsPanel({
                     type="password"
                     value={form.password}
                     onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                   />
                 </label>
               )}
@@ -4841,7 +4841,7 @@ function SettingsPanel({
                   <select
                     value={form.managerId}
                     onChange={(event) => setForm((current) => ({ ...current, managerId: event.target.value }))}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                    className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                   >
                     <option value="">{form.role === "manager" ? "Select director / supervisor" : "Select line manager"}</option>
                     {(form.role === "manager" ? reportingLeaders : managers).map((manager) => (
@@ -4854,7 +4854,7 @@ function SettingsPanel({
               )}
               {(staffStatus || staffError) && (
                 <div
-                  className={`rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
+                  className={`min-w-0 break-words rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
                     staffError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
                   }`}
                 >
@@ -4864,7 +4864,7 @@ function SettingsPanel({
               <div className="md:col-span-2">
                 <button
                   disabled={submitting}
-                  className="rounded-2xl bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                  className="w-full rounded-2xl bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-70 sm:w-auto"
                 >
                   {submitting ? "Saving..." : editingId ? "Update staff" : "Create staff account"}
                 </button>
@@ -4872,21 +4872,21 @@ function SettingsPanel({
             </form>
           </div>
 
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Change password</h3>
                 <p className="text-sm text-slate-500">Let staff replace temporary or existing passwords with one they prefer.</p>
               </div>
             </div>
-            <form className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleChangePassword}>
+            <form className="mt-6 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleChangePassword}>
               <label className="text-sm md:col-span-2">
                 <span className="mb-2 block font-medium text-slate-700">Current password</span>
                 <input
                   type="password"
                   value={passwordForm.currentPassword}
                   onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               <label className="text-sm">
@@ -4895,7 +4895,7 @@ function SettingsPanel({
                   type="password"
                   value={passwordForm.newPassword}
                   onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               <label className="text-sm">
@@ -4904,12 +4904,12 @@ function SettingsPanel({
                   type="password"
                   value={passwordForm.confirmPassword}
                   onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3"
+                  className="w-full min-w-0 rounded-2xl border border-neutral-200 px-4 py-3"
                 />
               </label>
               {(passwordStatus || passwordError) && (
                 <div
-                  className={`rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
+                  className={`min-w-0 break-words rounded-2xl px-4 py-3 text-sm md:col-span-2 ${
                     passwordError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
                   }`}
                 >
@@ -4919,7 +4919,7 @@ function SettingsPanel({
               <div className="md:col-span-2">
                 <button
                   disabled={passwordSubmitting}
-                  className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                  className="w-full rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-70 sm:w-auto"
                 >
                   {passwordSubmitting ? "Updating..." : "Update password"}
                 </button>
@@ -4927,7 +4927,7 @@ function SettingsPanel({
             </form>
           </div>
 
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div className="min-w-0 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
             <h3 className="text-lg font-semibold text-slate-900">Staff directory</h3>
             <div className="mt-5 overflow-x-auto">
               <table className="min-w-full text-left">
