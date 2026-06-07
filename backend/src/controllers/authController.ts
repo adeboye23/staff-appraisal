@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import {
+  acceptInvitationSchema,
   changePasswordSchema,
   completePasswordResetSchema,
   loginSchema,
@@ -10,6 +11,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { changePassword, loginUser, registerUser, requestPasswordReset, resetPasswordWithToken } from "../services/authService.js";
 import { logAudit } from "../utils/audit.js";
 import { AuthedRequest } from "../types.js";
+import { acceptInvitation, validateInvitation } from "../services/invitationService.js";
 
 export const register = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const data = registerSchema.parse(req.body);
@@ -56,6 +58,31 @@ export const completeReset = asyncHandler(async (req: Request, res: Response) =>
   const data = completePasswordResetSchema.parse(req.body);
   await resetPasswordWithToken(data.email, data.token, data.newPassword);
   res.json({ message: "Password reset successfully" });
+});
+
+export const validateSetupInvitation = asyncHandler(async (req: Request, res: Response) => {
+  const token = String(req.query.token || "");
+  const invitation = await validateInvitation(token);
+  res.json({
+    invitation: {
+      email: invitation.email,
+      name: invitation.name,
+      department: invitation.department,
+      expiresAt: invitation.expires_at
+    }
+  });
+});
+
+export const acceptSetupInvitation = asyncHandler(async (req: Request, res: Response) => {
+  const data = acceptInvitationSchema.parse(req.body);
+  const invitation = await acceptInvitation(data.token, data.password, data.name);
+  await logAudit({
+    actorUserId: invitation.user_id,
+    action: "invitation.accept",
+    entityType: "invitation",
+    entityId: invitation.id
+  });
+  res.json({ message: "Account setup complete" });
 });
 
 export const change = asyncHandler(async (req: AuthedRequest, res: Response) => {

@@ -24,6 +24,17 @@ export const completePasswordResetSchema = z.object({
   newPassword: z.string().min(8)
 });
 
+export const acceptInvitationSchema = z.object({
+  token: z.string().min(32),
+  name: z.string().min(2).max(120).optional(),
+  password: z
+    .string()
+    .min(10)
+    .regex(/[A-Z]/, "Password must include an uppercase letter")
+    .regex(/[a-z]/, "Password must include a lowercase letter")
+    .regex(/[0-9]/, "Password must include a number")
+});
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(8),
   newPassword: z.string().min(8)

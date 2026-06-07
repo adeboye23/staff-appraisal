@@ -2,6 +2,7 @@ import { app } from "./app.js";
 import { config } from "./config.js";
 import { ensureAppraisalWorkflowColumns } from "./services/appraisalService.js";
 import { ensurePasswordResetTokensTable, ensureUserRoleConstraint } from "./services/authService.js";
+import { ensureInvitationInfrastructure } from "./services/invitationService.js";
 import { ensureReviewPeriodsTable } from "./services/reviewPeriodService.js";
 
 async function wait(ms: number) {
@@ -16,6 +17,7 @@ async function initializeDatabase() {
       await ensureReviewPeriodsTable();
       await ensureUserRoleConstraint();
       await ensurePasswordResetTokensTable();
+      await ensureInvitationInfrastructure();
       await ensureAppraisalWorkflowColumns();
       return;
     } catch (error) {

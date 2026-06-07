@@ -15,7 +15,7 @@ export async function registerUser(input) {
     const result = await query(`
       INSERT INTO users (name, email, password, role, department_id, manager_id)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, name, email, role
+      RETURNING id, name, email, role, account_status
     `, [input.name, email, password, input.role, input.departmentId ?? null, input.managerId ?? null]);
     return result.rows[0];
 }
@@ -71,7 +71,7 @@ export async function updateUserAccount(id, input) {
           department_id = CASE WHEN $4::boolean THEN $5 ELSE department_id END,
           manager_id = CASE WHEN $6::boolean THEN $7 ELSE manager_id END
       WHERE id = $8
-      RETURNING id, name, email, role
+      RETURNING id, name, email, role, account_status
     `, [
         input.name ?? null,
         input.email ?? null,
@@ -116,6 +116,12 @@ export async function loginUser(email, password) {
     const user = result.rows[0];
     if (!user) {
         throw new ApiError(401, "Invalid credentials");
+    }
+    if (user.account_status === "pending") {
+        throw new ApiError(403, "Please complete account setup from your invitation email before signing in");
+    }
+    if (user.account_status === "deactivated") {
+        throw new ApiError(403, "This account is deactivated");
     }
     const match = await bcrypt.compare(password, user.password);
     if (!match) {

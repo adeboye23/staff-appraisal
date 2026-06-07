@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS users (
   role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'manager', 'hr', 'super_admin')),
   department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
   manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  account_status VARCHAR(20) NOT NULL DEFAULT 'active',
+  invited_at TIMESTAMP,
+  activated_at TIMESTAMP,
+  deactivated_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -98,9 +102,26 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS invitation_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(128) NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  delivery_attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  sent_at TIMESTAMP,
+  revoked_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);
 CREATE INDEX IF NOT EXISTS idx_kpis_user ON kpis(user_id);
 CREATE INDEX IF NOT EXISTS idx_appraisals_user ON appraisals(user_id);
 CREATE INDEX IF NOT EXISTS idx_comments_kpi ON comments(kpi_id);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_invitation_tokens_user ON invitation_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_invitation_tokens_status ON invitation_tokens(status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_review_periods_single_active ON review_periods ((is_active)) WHERE is_active = TRUE;

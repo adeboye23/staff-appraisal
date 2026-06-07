@@ -69,6 +69,7 @@ export type StaffMember = {
   role: Role;
   department: string | null;
   manager_id?: number | null;
+  account_status?: "active" | "pending" | "deactivated";
 };
 
 export type Department = {
@@ -271,4 +272,24 @@ export type EmployeeApproval = {
   appraisalsDue: number;
   kpis: Kpi[];
   comment: string;
+};
+
+export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked" | "failed";
+
+export type StaffInvitation = {
+  id: number;
+  user_id: number;
+  name: string;
+  email: string;
+  role: Role;
+  account_status: "active" | "pending" | "deactivated";
+  department: string | null;
+  status: InvitationStatus;
+  expires_at: string;
+  used_at: string | null;
+  sent_at: string | null;
+  delivery_attempts: number;
+  last_error: string | null;
+  created_by_name: string | null;
+  created_at: string;
 };

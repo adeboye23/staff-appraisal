@@ -25,7 +25,10 @@ export const updateDepartmentSchema = z.object({
 });
 export const bulkOnboardSchema = z.object({
     departmentId: z.number().int().positive(),
-    emails: z.array(z.string().email()).min(1).max(100),
+    emails: z.array(z.string().email()).min(1).max(200),
     role: z.enum(["employee", "manager"]).default("employee"),
     managerId: z.number().int().positive().nullable().optional()
+});
+export const accountStatusSchema = z.object({
+    status: z.enum(["active", "deactivated"])
 });

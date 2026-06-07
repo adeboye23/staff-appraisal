@@ -10,6 +10,7 @@ import {
   CommentHistoryItem,
   ReviewPeriod,
   Role,
+  StaffInvitation,
   StaffMember,
   UserReportResponse
 } from "./types";
@@ -53,6 +54,19 @@ export function completePasswordReset(email: string, token: string, newPassword:
   return request<{ message: string }>("/auth/reset-password/complete", {
     method: "POST",
     body: JSON.stringify({ email, token, newPassword })
+  });
+}
+
+export function validateInvitation(token: string) {
+  return request<{
+    invitation: { email: string; name: string; department: string | null; expiresAt: string };
+  }>(`/auth/invitations/validate?token=${encodeURIComponent(token)}`);
+}
+
+export function acceptInvitation(payload: { token: string; name?: string; password: string }) {
+  return request<{ message: string }>("/auth/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 
@@ -285,12 +299,37 @@ export function bulkOnboardStaff(
   }
 ) {
   return request<{
-    created: Array<{ id: number; name: string; email: string; role: Role }>;
+    invited: Array<{ email: string; invitationId: number; status: string }>;
     skipped: Array<{ email: string; reason: string }>;
+    failed: Array<{ email: string; reason: string }>;
     emailDeliveryConfigured?: boolean;
   }>(
     "/users/bulk-onboard",
     { method: "POST", body: JSON.stringify(payload) },
+    token
+  );
+}
+
+export function getStaffInvitations(token: string) {
+  return request<{ data: StaffInvitation[] }>("/users/invitations", { method: "GET" }, token);
+}
+
+export function resendStaffInvitation(token: string, invitationId: number) {
+  return request<{ invitation: unknown }>(
+    `/users/invitations/${invitationId}/resend`,
+    { method: "POST" },
+    token
+  );
+}
+
+export function revokeStaffInvitation(token: string, invitationId: number) {
+  return request<{}>(`/users/invitations/${invitationId}/revoke`, { method: "POST" }, token);
+}
+
+export function updateStaffStatus(token: string, userId: number, status: "active" | "deactivated") {
+  return request<{ user: unknown }>(
+    `/users/${userId}/status`,
+    { method: "PATCH", body: JSON.stringify({ status }) },
     token
   );
 }

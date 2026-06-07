@@ -49,6 +49,7 @@ import {
   bulkOnboardStaff,
   changePassword as changePasswordRequest,
   completePasswordReset,
+  acceptInvitation as acceptInvitationRequest,
   createDepartment as createDepartmentRequest,
   createReviewPeriod as createReviewPeriodRequest,
   createStaff,
@@ -58,6 +59,7 @@ import {
   deleteStaff,
   getDepartmentReport,
   getNotifications,
+  getStaffInvitations,
   getOrganizationReport,
   getUserComments,
   getDashboardSummary,
@@ -69,7 +71,9 @@ import {
   getUserKpis,
   login,
   requestPasswordReset,
+  resendStaffInvitation,
   resetStaffPassword,
+  revokeStaffInvitation,
   setActiveReviewPeriod as setActiveReviewPeriodRequest,
   submitDirectorReview,
   submitFinalScore,
@@ -77,7 +81,9 @@ import {
   submitSelfAppraisal,
   updateDepartment as updateDepartmentRequest,
   updateKpi as updateKpiRequest,
-  updateStaff
+  updateStaff,
+  updateStaffStatus,
+  validateInvitation as validateInvitationRequest
 } from "./api";
 import companyLogo from "./assets/news-central-logo-photo.jpg";
 import { navItems, reportTrend } from "./data";
@@ -94,6 +100,7 @@ import {
   ReviewPeriod,
   Role,
   StaffMember,
+  StaffInvitation,
   UserReportResponse
 } from "./types";
 
@@ -997,6 +1004,22 @@ function App() {
     }
   };
 
+  const handleInvitationSetupComplete = async (payload: { token: string; name?: string; password: string }) => {
+    setPasswordResetPending(true);
+    setLoginError("");
+    setPasswordResetStatus("");
+
+    try {
+      await acceptInvitationRequest(payload);
+      setPasswordResetStatus("Account setup complete. You can sign in now.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "Unable to complete account setup");
+    } finally {
+      setPasswordResetPending(false);
+    }
+  };
+
   const handleLogout = () => {
     setSession(null);
     setDashboard(null);
@@ -1023,6 +1046,7 @@ function App() {
         onChange={setLoginForm}
         onRequestPasswordReset={handlePasswordResetRequest}
         onCompletePasswordReset={handlePasswordResetComplete}
+        onCompleteInvitationSetup={handleInvitationSetupComplete}
         onSubmit={handleLogin}
       />
     );
@@ -1168,6 +1192,7 @@ function LoginScreen({
   onChange,
   onRequestPasswordReset,
   onCompletePasswordReset,
+  onCompleteInvitationSetup,
   onSubmit
 }: {
   form: { email: string; password: string };
@@ -1178,17 +1203,54 @@ function LoginScreen({
   onChange: (value: { email: string; password: string }) => void;
   onRequestPasswordReset: (email: string) => Promise<void>;
   onCompletePasswordReset: (payload: { email: string; token: string; newPassword: string }) => Promise<void>;
+  onCompleteInvitationSetup: (payload: { token: string; name?: string; password: string }) => Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const resetParams = new URLSearchParams(window.location.search);
-  const [mode, setMode] = useState<"login" | "forgot">(resetParams.get("resetToken") ? "forgot" : "login");
+  const setupToken = resetParams.get("setupToken") ?? "";
+  const [mode, setMode] = useState<"login" | "forgot" | "setup">(
+    setupToken ? "setup" : resetParams.get("resetToken") ? "forgot" : "login"
+  );
   const [resetForm, setResetForm] = useState({
     email: resetParams.get("email") ?? "",
     token: resetParams.get("resetToken") ?? "",
     newPassword: ""
   });
+  const [setupForm, setSetupForm] = useState({
+    token: setupToken,
+    name: "",
+    password: "",
+    confirmPassword: ""
+  });
+  const [setupDetails, setSetupDetails] = useState<{ email: string; name: string; department: string | null } | null>(null);
+  const [setupValidationError, setSetupValidationError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const hasResetToken = resetForm.token.trim().length > 0;
+
+  useEffect(() => {
+    if (!setupToken) return;
+
+    let cancelled = false;
+    setSetupValidationError("");
+    validateInvitationRequest(setupToken)
+      .then((response) => {
+        if (cancelled) return;
+        setSetupDetails(response.invitation);
+        setSetupForm((current) => ({
+          ...current,
+          name: response.invitation.name ?? "",
+          token: setupToken
+        }));
+      })
+      .catch((validationError) => {
+        if (cancelled) return;
+        setSetupValidationError(validationError instanceof Error ? validationError.message : "Invitation link is invalid");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setupToken]);
 
   return (
     <div className="min-h-screen bg-[#c1121f]">
@@ -1214,11 +1276,13 @@ function LoginScreen({
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-brand">News Central</p>
                 <h2 className="mt-3 text-3xl font-bold text-slate-900">
-                  {mode === "login" ? "Sign in to your account" : "Reset password"}
+                  {mode === "login" ? "Sign in to your account" : mode === "setup" ? "Set up your account" : "Reset password"}
                 </h2>
                 <p className="mt-2 text-sm text-slate-500">
                   {mode === "login"
                     ? "Sign in to continue your appraisal workflow."
+                    : mode === "setup"
+                      ? "Create your password to activate your appraisal workspace."
                     : hasResetToken
                       ? "Set a new password so you can access your workspace."
                       : "Enter your work email and we will send a secure reset link."}
@@ -1232,9 +1296,9 @@ function LoginScreen({
                   {status}
                 </div>
               )}
-              {error && (
+              {(error || setupValidationError) && (
                 <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {error}
+                  {error || setupValidationError}
                 </div>
               )}
               {mode === "login" ? (
@@ -1278,6 +1342,70 @@ function LoginScreen({
                   <div className="pt-2 text-right">
                     <button type="button" onClick={() => setMode("forgot")} className="text-sm font-medium text-brand">
                       Forgot password?
+                    </button>
+                  </div>
+                </form>
+              ) : mode === "setup" ? (
+                <form
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (setupForm.password !== setupForm.confirmPassword) {
+                      setSetupValidationError("Password and confirmation must match.");
+                      return;
+                    }
+                    setSetupValidationError("");
+                    void onCompleteInvitationSetup({
+                      token: setupForm.token,
+                      name: setupForm.name.trim() || undefined,
+                      password: setupForm.password
+                    });
+                  }}
+                >
+                  {setupDetails && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <p className="font-semibold text-slate-900">{setupDetails.email}</p>
+                      <p>{setupDetails.department ?? "Department not assigned"}</p>
+                    </div>
+                  )}
+                  <label className="block text-sm">
+                    <span className="mb-2 block font-medium text-slate-700">Full name</span>
+                    <input
+                      value={setupForm.name}
+                      onChange={(event) => setSetupForm((current) => ({ ...current, name: event.target.value }))}
+                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
+                      placeholder="Enter your full name"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-2 block font-medium text-slate-700">Password</span>
+                    <input
+                      type="password"
+                      value={setupForm.password}
+                      onChange={(event) => setSetupForm((current) => ({ ...current, password: event.target.value }))}
+                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
+                      placeholder="At least 10 characters, upper/lowercase and number"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-2 block font-medium text-slate-700">Confirm password</span>
+                    <input
+                      type="password"
+                      value={setupForm.confirmPassword}
+                      onChange={(event) => setSetupForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
+                      placeholder="Repeat password"
+                    />
+                  </label>
+                  <button
+                    disabled={resetPending || Boolean(setupValidationError && !setupDetails)}
+                    className="w-full rounded-2xl bg-brand px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {resetPending ? "Activating..." : "Activate account"}
+                  </button>
+                  <div className="pt-2 text-right">
+                    <button type="button" onClick={() => setMode("login")} className="text-sm font-medium text-brand">
+                      Back to sign in
                     </button>
                   </div>
                 </form>
@@ -3863,6 +3991,10 @@ function SettingsPanel({
   const [openDepartmentMenuId, setOpenDepartmentMenuId] = useState<number | null>(null);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkError, setBulkError] = useState("");
+  const [invitations, setInvitations] = useState<StaffInvitation[]>([]);
+  const [invitationStatus, setInvitationStatus] = useState("");
+  const [invitationError, setInvitationError] = useState("");
+  const [invitationActionId, setInvitationActionId] = useState<number | null>(null);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -3901,6 +4033,18 @@ function SettingsPanel({
       description: "Keep review periods, onboarding, account recovery, and system clean-up in one backend settings area."
     }
   ];
+
+  const refreshInvitations = async () => {
+    if (!hasAdminAccess(user.role)) return;
+    const response = await getStaffInvitations(token);
+    setInvitations(response.data);
+  };
+
+  useEffect(() => {
+    void refreshInvitations().catch((error) => {
+      setInvitationError(error instanceof Error ? error.message : "Unable to load invitations");
+    });
+  }, [token, user.role]);
 
   const resetForm = () => {
     setForm({
@@ -4138,18 +4282,71 @@ function SettingsPanel({
 
       await onDirectoryRefresh();
       setBulkForm((current) => ({ ...current, emails: "" }));
+      await refreshInvitations();
+      const invitedCount = result.invited.length;
+      const failedCount = result.failed.length;
+      const skippedCount = result.skipped.length;
       const deliveryText = result.emailDeliveryConfigured
-        ? "emailed"
-        : "created. Email delivery is not configured, so credentials were logged by the server";
+        ? "invitation email queued"
+        : "invitation created. Email delivery is not configured, so setup links were logged by the server";
       setBulkStatus(
-        `${result.created.length} account${result.created.length === 1 ? "" : "s"} ${deliveryText}.${
-          result.skipped.length ? ` ${result.skipped.length} skipped because they already exist or could not be sent.` : ""
-        }`
+        `${invitedCount} ${invitedCount === 1 ? "account" : "accounts"} ${deliveryText}.${
+          failedCount ? ` ${failedCount} email ${failedCount === 1 ? "delivery" : "deliveries"} failed.` : ""
+        }${skippedCount ? ` ${skippedCount} skipped because they already exist.` : ""}`
       );
     } catch (onboardError) {
       setBulkError(onboardError instanceof Error ? onboardError.message : "Unable to complete bulk onboarding");
     } finally {
       setBulkSubmitting(false);
+    }
+  };
+
+  const handleInvitationResend = async (invitation: StaffInvitation) => {
+    setInvitationActionId(invitation.id);
+    setInvitationStatus("");
+    setInvitationError("");
+
+    try {
+      await resendStaffInvitation(token, invitation.id);
+      await refreshInvitations();
+      setInvitationStatus(`Invitation resent to ${invitation.email}.`);
+    } catch (error) {
+      setInvitationError(error instanceof Error ? error.message : "Unable to resend invitation");
+    } finally {
+      setInvitationActionId(null);
+    }
+  };
+
+  const handleInvitationRevoke = async (invitation: StaffInvitation) => {
+    const confirmed = window.confirm(`Revoke invitation for ${invitation.email}? The pending account will be deactivated.`);
+    if (!confirmed) return;
+
+    setInvitationActionId(invitation.id);
+    setInvitationStatus("");
+    setInvitationError("");
+
+    try {
+      await revokeStaffInvitation(token, invitation.id);
+      await refreshInvitations();
+      await onDirectoryRefresh();
+      setInvitationStatus(`Invitation revoked for ${invitation.email}.`);
+    } catch (error) {
+      setInvitationError(error instanceof Error ? error.message : "Unable to revoke invitation");
+    } finally {
+      setInvitationActionId(null);
+    }
+  };
+
+  const handleStaffStatusChange = async (member: StaffMember, status: "active" | "deactivated") => {
+    setStaffStatus("");
+    setStaffError("");
+
+    try {
+      await updateStaffStatus(token, member.id, status);
+      await onDirectoryRefresh();
+      setStaffStatus(`${getDisplayNameFromStaff(member)} ${status === "active" ? "activated" : "deactivated"}.`);
+    } catch (error) {
+      setStaffError(error instanceof Error ? error.message : "Unable to update staff status");
     }
   };
 
@@ -4388,10 +4585,10 @@ function SettingsPanel({
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-slate-900">Batch staff onboarding</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">Paste staff emails, choose their department, and the system sends generated temporary login credentials.</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">Paste staff emails, choose their department, and the system sends secure account setup invitations.</p>
                   </div>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Email credentials enabled</span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Invitation links enabled</span>
               </div>
               <form className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={handleBulkOnboard}>
                 <label className="text-sm">
@@ -4464,10 +4661,96 @@ function SettingsPanel({
                     className="inline-flex items-center gap-2 rounded-2xl bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-70"
                   >
                     <Mail size={16} />
-                    {bulkSubmitting ? "Sending credentials..." : "Generate passwords and send invites"}
+                    {bulkSubmitting ? "Sending invitations..." : "Send setup invitations"}
                   </button>
                 </div>
               </form>
+            </div>
+
+            <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Invitation tracking</h3>
+                  <p className="text-sm text-slate-500">Resend failed or expired setup links and revoke unused invitations.</p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-slate-700"
+                  onClick={() => void refreshInvitations()}
+                >
+                  Refresh
+                </button>
+              </div>
+              {(invitationStatus || invitationError) && (
+                <div
+                  className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                    invitationError ? "border border-rose-200 bg-rose-50 text-rose-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {invitationError || invitationStatus}
+                </div>
+              )}
+              <div className="mt-5 overflow-x-auto">
+                <table className="min-w-full text-left">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
+                    <tr>
+                      {["Staff", "Role", "Department", "Status", "Expires", "Attempts", "Actions"].map((col) => (
+                        <th key={col} className="px-4 py-3 font-semibold">
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invitations.length ? (
+                      invitations.map((invitation) => (
+                        <tr key={invitation.id} className="border-t border-neutral-100">
+                          <td className="px-4 py-4">
+                            <p className="font-medium text-slate-900">{invitation.name}</p>
+                            <p className="text-sm text-slate-500">{invitation.email}</p>
+                            {invitation.last_error && <p className="mt-1 max-w-xs text-xs text-rose-600">{invitation.last_error}</p>}
+                          </td>
+                          <td className="px-4 py-4 text-slate-600 capitalize">{invitation.role}</td>
+                          <td className="px-4 py-4 text-slate-600">{invitation.department ?? "Unassigned"}</td>
+                          <td className="px-4 py-4">
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-700">
+                              {invitation.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-sm text-slate-600">{new Date(invitation.expires_at).toLocaleString()}</td>
+                          <td className="px-4 py-4 text-slate-600">{invitation.delivery_attempts}</td>
+                          <td className="px-4 py-4">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={invitationActionId === invitation.id || invitation.account_status !== "pending"}
+                                className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-brand disabled:opacity-50"
+                                onClick={() => void handleInvitationResend(invitation)}
+                              >
+                                Resend
+                              </button>
+                              <button
+                                type="button"
+                                disabled={invitationActionId === invitation.id || invitation.status === "accepted" || invitation.status === "revoked"}
+                                className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-rose-600 disabled:opacity-50"
+                                onClick={() => void handleInvitationRevoke(invitation)}
+                              >
+                                Revoke
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="px-4 py-6 text-sm text-slate-500" colSpan={7}>
+                          No invitations recorded yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -4650,7 +4933,7 @@ function SettingsPanel({
               <table className="min-w-full text-left">
                 <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
                   <tr>
-                    {["Name", "Email", "Role", "Department", "Actions"].map((col) => (
+                    {["Name", "Email", "Role", "Department", "Status", "Actions"].map((col) => (
                       <th key={col} className="px-4 py-3 font-semibold">
                         {col}
                       </th>
@@ -4665,6 +4948,11 @@ function SettingsPanel({
                       <td className="px-4 py-4 text-slate-600 capitalize">{member.role}</td>
                       <td className="px-4 py-4 text-slate-600">{member.department ?? "Unassigned"}</td>
                       <td className="px-4 py-4">
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-700">
+                          {member.account_status ?? "active"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
                           <button
                             className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-slate-700"
@@ -4677,6 +4965,13 @@ function SettingsPanel({
                             onClick={() => handlePasswordReset(member)}
                           >
                             Reset password
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-slate-700"
+                            onClick={() => void handleStaffStatusChange(member, member.account_status === "deactivated" ? "active" : "deactivated")}
+                          >
+                            {member.account_status === "deactivated" ? "Activate" : "Deactivate"}
                           </button>
                           <button
                             className="rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-rose-600"
