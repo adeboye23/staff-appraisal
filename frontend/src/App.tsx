@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Download,
   Eye,
+  EyeOff,
   FileBarChart2,
   LayoutDashboard,
   Lock,
@@ -1257,6 +1258,7 @@ function LoginScreen({
   const [setupDetails, setSetupDetails] = useState<{ email: string; name: string; department: string | null } | null>(null);
   const [setupValidationError, setSetupValidationError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const hasResetToken = resetForm.token.trim().length > 0;
 
   useEffect(() => {
@@ -1297,9 +1299,6 @@ function LoginScreen({
             <h1 className="mt-6 max-w-xl text-6xl font-bold leading-[1.02] text-white">
               Performance reviews in one bold, focused workspace.
             </h1>
-            <p className="mt-5 max-w-lg text-lg leading-8 text-white/82">
-              Sign in to manage KPIs, review progress, and complete appraisal cycles with a cleaner News Central workflow.
-            </p>
           </div>
         </section>
         <section className="flex min-h-screen items-center justify-center bg-[#fff7f7] px-5 py-8 sm:px-8 lg:px-12">
@@ -1344,16 +1343,26 @@ function LoginScreen({
                       placeholder="name@newscentral.com"
                     />
                   </label>
-                  <label className="block text-sm">
+                  <div className="block text-sm">
                     <span className="mb-2 block font-medium text-slate-700">Password</span>
-                    <input
-                      value={form.password}
-                      onChange={(event) => onChange({ ...form, password: event.target.value })}
-                      className="w-full rounded-2xl border border-neutral-200 px-4 py-3 outline-none transition focus:border-brand"
-                      type="password"
-                      placeholder="Enter your password"
-                    />
-                  </label>
+                    <div className="relative">
+                      <input
+                        value={form.password}
+                        onChange={(event) => onChange({ ...form, password: event.target.value })}
+                        className="w-full rounded-2xl border border-neutral-200 px-4 py-3 pr-12 outline-none transition focus:border-brand"
+                        type={showLoginPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword((current) => !current)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                        aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                      >
+                        {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
                   <div className="flex items-center justify-between gap-4 text-sm">
                     <label className="flex items-center gap-3 text-slate-600">
                       <input
