@@ -130,11 +130,13 @@ const statusLabels: Record<Kpi["status"], string> = {
 
 type BulkInviteRole = "employee" | "manager" | "hr";
 
-const sidebarSections = [
-  { label: "Workspace", keys: ["dashboard"] },
-  { label: "Performance", keys: ["appraisals", "kpis", "reviews", "reports"] },
-  { label: "HR & People", keys: ["settings"] }
-];
+function getSidebarSections(role: Role) {
+  return [
+    { label: "Workspace", keys: ["dashboard"] },
+    { label: "Performance", keys: ["appraisals", "kpis", "reviews", "reports"] },
+    { label: hasAdminAccess(role) ? "HR & People" : "Account", keys: ["settings"] }
+  ];
+}
 
 function getRoleBadgeClass(role: Role) {
   if (role === "hr" || role === "super_admin") {
@@ -310,7 +312,7 @@ function isReviewDateOpen(reviewDate?: string | null) {
 function getNavItemsForRole(role: Role) {
   const allowedByRole: Record<Role, string[]> = {
     employee: ["dashboard", "kpis", "appraisals", "reports"],
-    manager: ["dashboard", "kpis", "appraisals", "reviews", "reports"],
+    manager: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"],
     hr: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"],
     super_admin: ["dashboard", "kpis", "appraisals", "reviews", "reports", "settings"]
   };
@@ -1568,6 +1570,7 @@ function SidebarContent({
 }) {
   const displayName = getDisplayName(user);
   const roleNavItems = getNavItemsForRole(user.role);
+  const sidebarSections = getSidebarSections(user.role);
 
   return (
     <>
@@ -1604,7 +1607,7 @@ function SidebarContent({
                         }`}
                       >
                         <Icon size={18} />
-                        <span>{item.key === "settings" ? "HR & People" : item.label}</span>
+                        <span>{item.key === "settings" && hasAdminAccess(user.role) ? "HR & People" : item.label}</span>
                       </button>
                     );
                   })}
